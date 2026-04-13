@@ -121,6 +121,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const browsingHistoryRef = useRef(browsingHistory);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
+  const lastAutoProductRef = useRef<string>("");
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -207,7 +208,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setIsOpen(true);
           setTimeout(() => {
             handleSendRef.current?.(
-              `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
+              `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation. Then show me action buttons for Add to Cart and Compare with other options.`
             );
           }, 800);
         }
@@ -240,6 +241,21 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             purchasedProducts: ctx.purchasedProducts,
           });
           setVisitorProfile(updated);
+        }
+
+        // Auto-show product info when user navigates to a new product page
+        if (
+          ctx.page === "pdp" &&
+          ctx.productName &&
+          ctx.productName !== lastAutoProductRef.current
+        ) {
+          lastAutoProductRef.current = ctx.productName;
+          // Small delay to let enriched data (description, price) arrive
+          setTimeout(() => {
+            handleSendRef.current?.(
+              `I'm now looking at ${ctx.productName}${ctx.productPrice ? " (" + ctx.productPrice + ")" : ""}. Tell me about this product and show me options to Add to Cart, Compare, or keep browsing.`
+            );
+          }, 1500);
         }
         return;
       }
