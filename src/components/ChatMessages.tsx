@@ -12,7 +12,7 @@ function TypingIndicator() {
     <div className="flex items-center gap-1 px-4 py-3">
       <div
         className="flex items-center gap-1 rounded-2xl rounded-bl-sm px-4 py-3"
-        style={{ backgroundColor: "var(--rtg-cream)" }}
+        style={{ backgroundColor: "white", border: "1px solid var(--rtg-gray-200)" }}
       >
         <div className="typing-dot h-2 w-2 rounded-full" />
         <div className="typing-dot h-2 w-2 rounded-full" />
@@ -78,29 +78,34 @@ function MessageBubble({
 
   return (
     <div
-      className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1`}
+      className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1.5`}
     >
       {/* Assistant avatar + label */}
       {showAvatar && (
-        <div className="mb-1 flex items-center gap-1.5 pl-1">
-          <RTGLogo size={18} />
+        <div className="mb-1 flex items-center gap-2 pl-1">
+          <RTGLogo size={24} />
           <span
-            className="text-[11px] font-semibold"
-            style={{ color: "var(--rtg-gray-700)" }}
+            className="text-[12px] font-bold"
+            style={{ color: "var(--rtg-blue)" }}
           >
             Shopping Assistant
           </span>
         </div>
       )}
       <div
-        className={`max-w-[85%] px-4 py-2.5 text-[15px] leading-relaxed ${
+        className={`max-w-[88%] px-4 py-2.5 text-[15px] leading-relaxed ${
           isUser
             ? "rounded-2xl rounded-br-sm"
-            : "rounded-2xl rounded-bl-sm chat-content"
+            : "rounded-xl chat-content"
         }`}
         style={{
-          backgroundColor: isUser ? "var(--rtg-gray-50)" : "var(--rtg-cream)",
+          backgroundColor: "white",
           color: "var(--rtg-charcoal)",
+          border: isUser ? "none" : "1px solid var(--rtg-gray-200)",
+          boxShadow: isUser ? "none" : "0 1px 3px rgba(0,0,0,0.06)",
+          ...(isUser
+            ? { backgroundColor: "var(--rtg-blue-light)" }
+            : {}),
         }}
       >
         {isUser ? (
@@ -176,7 +181,7 @@ export function ChatMessages({
   return (
     <div
       className="chat-messages flex-1 overflow-y-auto py-3"
-      style={{ backgroundColor: "var(--rtg-white)" }}
+      style={{ backgroundColor: "var(--rtg-gray-100)" }}
     >
       {messages.map((msg, i) => (
         <MessageBubble

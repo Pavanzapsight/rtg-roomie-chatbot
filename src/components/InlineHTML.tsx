@@ -69,8 +69,8 @@ const IFRAME_BASE_STYLES = `
     padding: 6px 14px;
     margin: 3px;
     border-radius: 999px;
-    border: 1px solid #E4002B;
-    color: #E4002B;
+    border: 1px solid #003DA5;
+    color: #003DA5;
     background: white;
     font-size: 13px;
     font-weight: 500;
@@ -79,7 +79,7 @@ const IFRAME_BASE_STYLES = `
     user-select: none;
   }
   .pill:hover, .chip:hover, [data-prompt]:hover {
-    background: #E4002B;
+    background: #003DA5;
     color: white;
   }
   .pill:active, .chip:active, [data-prompt]:active {
@@ -87,9 +87,9 @@ const IFRAME_BASE_STYLES = `
   }
   /* Selected state for multi-select */
   .pill.selected, .chip.selected {
-    background: #E4002B;
+    background: #003DA5;
     color: white;
-    box-shadow: 0 0 0 2px rgba(228,0,43,0.3);
+    box-shadow: 0 0 0 2px rgba(0,61,165,0.3);
   }
 
   /* Card styles */
@@ -114,11 +114,11 @@ const IFRAME_BASE_STYLES = `
   /* Button styles */
   button { font-family: inherit; }
   .btn-primary {
-    background: #E4002B; color: white; border: none;
+    background: #003DA5; color: white; border: none;
     padding: 8px 16px; border-radius: 8px; font-weight: 600;
     font-size: 13px; cursor: pointer; transition: background 0.15s;
   }
-  .btn-primary:hover { background: #B30022; }
+  .btn-primary:hover { background: #002D7A; }
   .btn-secondary {
     background: white; color: #0033A0; border: 1px solid #0033A0;
     padding: 8px 16px; border-radius: 8px; font-weight: 600;
@@ -137,12 +137,12 @@ const IFRAME_BASE_STYLES = `
   .btn-submit {
     display: block;
     margin-top: 8px;
-    background: #E4002B; color: white; border: none;
+    background: #003DA5; color: white; border: none;
     padding: 8px 20px; border-radius: 8px; font-weight: 600;
     font-size: 13px; cursor: pointer; transition: background 0.15s;
     width: 100%;
   }
-  .btn-submit:hover { background: #B30022; }
+  .btn-submit:hover { background: #002D7A; }
 
   /* Layout helpers */
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }

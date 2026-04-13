@@ -1,16 +1,22 @@
 @import "tailwindcss";
 
 :root {
+  /* RTG Brand Colors — matched to official chat widget */
+  --rtg-blue: #003DA5;
+  --rtg-blue-dark: #002D7A;
+  --rtg-blue-light: #E8EFF8;
+  --rtg-navy: #1B3668;
   --rtg-red: #E4002B;
-  --rtg-red-dark: #B30022;
-  --rtg-blue: #0033A0;
+  --rtg-gold: #F2C75C;
+  --rtg-green: #4CAF50;
   --rtg-white: #FFFFFF;
   --rtg-cream: #FAF7F2;
   --rtg-charcoal: #1A1A1A;
   --rtg-gray-700: #4A4A4A;
+  --rtg-gray-500: #8A8A8A;
   --rtg-gray-200: #E5E5E5;
+  --rtg-gray-100: #F0F0F0;
   --rtg-gray-50: #F7F7F7;
-  --rtg-gold: #C9A95C;
   --background: #ffffff;
   --foreground: #1A1A1A;
 }
@@ -18,13 +24,15 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-rtg-red: var(--rtg-red);
-  --color-rtg-red-dark: var(--rtg-red-dark);
   --color-rtg-blue: var(--rtg-blue);
+  --color-rtg-blue-dark: var(--rtg-blue-dark);
+  --color-rtg-navy: var(--rtg-navy);
+  --color-rtg-red: var(--rtg-red);
   --color-rtg-cream: var(--rtg-cream);
   --color-rtg-charcoal: var(--rtg-charcoal);
   --color-rtg-gray-700: var(--rtg-gray-700);
   --color-rtg-gray-200: var(--rtg-gray-200);
+  --color-rtg-gray-100: var(--rtg-gray-100);
   --color-rtg-gray-50: var(--rtg-gray-50);
   --color-rtg-gold: var(--rtg-gold);
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -72,7 +80,7 @@ body {
 /* Typing indicator */
 .typing-dot {
   animation: typingPulse 1.4s ease-in-out infinite;
-  background-color: var(--rtg-red);
+  background-color: var(--rtg-blue);
   opacity: 0.6;
 }
 

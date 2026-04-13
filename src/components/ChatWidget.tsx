@@ -395,15 +395,10 @@ export function ChatWidget() {
         <button
           onClick={handleOpen}
           className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2"
-          style={{ backgroundColor: "var(--rtg-red)" }}
+          style={{ backgroundColor: "var(--rtg-blue)" }}
           aria-label="Open Shopping Assistant"
         >
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full"
-            style={{ backgroundColor: "rgba(255,255,255,0.2)" }}
-          >
-            <RTGLogo size={22} />
-          </div>
+          <RTGLogo size={32} />
           <span
             className="text-sm font-semibold"
             style={{ color: "white" }}
