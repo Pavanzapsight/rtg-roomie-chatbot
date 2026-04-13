@@ -44,6 +44,14 @@ body {
   font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
 
+/* /embed — transparent shell for iframe; pointer-events pass through empty areas */
+html.embed-chat-root,
+body.embed-chat-root {
+  background: transparent !important;
+  min-height: 100%;
+  pointer-events: none;
+}
+
 /* Chat bubble animations */
 @media (prefers-reduced-motion: no-preference) {
   .chat-bubble-enter {

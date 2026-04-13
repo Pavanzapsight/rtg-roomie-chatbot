@@ -22,6 +22,12 @@ import {
   loadVisitorProfile,
   updateProfileFromChat,
 } from "@/lib/visitor-profile";
+import type { PageContext } from "@/lib/system-prompt";
+import {
+  RTG_PAGE_CONTEXT_MESSAGE,
+  isAllowedContextMessageSource,
+  sanitizeHostPageContext,
+} from "@/lib/page-context";
 
 export interface ChatMessage {
   id: string;
@@ -29,17 +35,7 @@ export interface ChatMessage {
   text: string;
 }
 
-export interface PageContext {
-  page: "pdp" | "category" | "cart" | "homepage" | "search" | "unknown";
-  productName?: string;
-  productSku?: string;
-  category?: string;
-  cartItems?: string[];
-  searchQuery?: string;
-  dwellSeconds?: number;
-  pageHistory?: string[];
-  purchasedProducts?: string[];
-}
+export type { PageContext };
 
 const CHAT_ID = "rtg-roomie-chat";
 
@@ -96,7 +92,7 @@ function getDwellThreshold(): number {
   return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 60000; // default 1 minute
 }
 
-export function ChatWidget() {
+export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
@@ -126,6 +122,7 @@ export function ChatWidget() {
         prepareSendMessagesRequest: ({ id, messages, body }) => {
           const extras = requestExtrasRef.current;
           requestExtrasRef.current = null;
+          const pageCtx = getPageContext();
           return {
             body: {
               id,
@@ -133,6 +130,7 @@ export function ChatWidget() {
               ...(body ?? {}),
               visitorProfile: visitorProfileRef.current ?? undefined,
               model: selectedModelRef.current,
+              ...(pageCtx ? { pageContext: pageCtx } : {}),
               ...extras,
             },
           };
@@ -154,6 +152,27 @@ export function ChatWidget() {
   // Listen for sendPrompt + open URL from inline HTML iframes (sandbox cannot navigate top window)
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
+      if (e.data?.type === RTG_PAGE_CONTEXT_MESSAGE) {
+        if (!isAllowedContextMessageSource(e.source)) return;
+        const sanitized = sanitizeHostPageContext(e.data.context);
+        if (!sanitized) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).RTG_CHAT_CONTEXT = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(window as any).RTG_CHAT_CONTEXT,
+          ...sanitized,
+        };
+        const ctx = getPageContext();
+        if (ctx) {
+          const updated = recordVisit({
+            productName: ctx.productName,
+            category: ctx.category,
+            purchasedProducts: ctx.purchasedProducts,
+          });
+          setVisitorProfile(updated);
+        }
+        return;
+      }
       if (e.data?.type === "rtg-open-url" && typeof e.data.url === "string") {
         const raw = e.data.url.trim();
         try {
@@ -182,31 +201,7 @@ export function ChatWidget() {
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  // Listen for page context updates from host page
-  useEffect(() => {
-    function handleContextUpdate(e: MessageEvent) {
-      if (e.data?.type === "rtg-page-context-update") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (window as any).RTG_CHAT_CONTEXT = {
-          ...(window as any).RTG_CHAT_CONTEXT,
-          ...e.data.context,
-        };
-        const ctx = getPageContext();
-        if (ctx) {
-          const updated = recordVisit({
-            productName: ctx.productName,
-            category: ctx.category,
-            purchasedProducts: ctx.purchasedProducts,
-          });
-          setVisitorProfile(updated);
-        }
-      }
-    }
-    window.addEventListener("message", handleContextUpdate);
-    return () => window.removeEventListener("message", handleContextUpdate);
-  }, []);
+  }, [setVisitorProfile]);
 
   // Load persisted messages + record visit on mount
   useEffect(() => {
@@ -387,7 +382,7 @@ export function ChatWidget() {
       {!isOpen && (
         <button
           onClick={handleOpen}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2"
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 ${embed ? "pointer-events-auto" : ""}`}
           style={{ backgroundColor: "var(--rtg-blue)" }}
           aria-label="Open Shopping Assistant"
         >
@@ -403,7 +398,7 @@ export function ChatWidget() {
 
       {isOpen && (
         <div
-          className="widget-enter fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+          className={`widget-enter fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl shadow-2xl ${embed ? "pointer-events-auto" : ""}`}
           style={{
             width: 420,
             height: 640,

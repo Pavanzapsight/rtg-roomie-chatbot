@@ -30,6 +30,7 @@ export interface PageContext {
   searchQuery?: string;
   dwellSeconds?: number;
   pageHistory?: string[];
+  purchasedProducts?: string[];
 }
 
 const cache: Record<string, string> = {};
@@ -182,7 +183,7 @@ export function buildSystemPrompt(
   // Build context blocks
   let contextBlocks = "";
 
-  if (options?.pageContext && stage === "proactive") {
+  if (options?.pageContext) {
     contextBlocks += `\n\n# PAGE CONTEXT\n\n\`\`\`json\n${JSON.stringify(options.pageContext, null, 2)}\n\`\`\``;
   }
 

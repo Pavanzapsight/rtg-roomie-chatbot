@@ -117,6 +117,7 @@ export async function POST(request: Request) {
     const currentStage = inferStage(plainForStage);
     const systemPrompt = buildSystemPrompt(catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
+      pageContext: pageContext ?? undefined,
     });
 
     const sanitized = sanitizeForModel(messages);
