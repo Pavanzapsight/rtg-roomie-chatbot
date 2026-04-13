@@ -182,7 +182,16 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         try {
           const parsed = new URL(raw);
           if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-            window.open(parsed.href, "_blank", "noopener,noreferrer");
+            // Save pending product summary so the widget can auto-ask on next load
+            const productName = e.data.productName || parsed.pathname.split("/").pop()?.replace(/-/g, " ") || "";
+            if (productName) {
+              localStorage.setItem("rtg_pending_product_summary", JSON.stringify({
+                url: parsed.href,
+                productName,
+              }));
+            }
+            // Navigate in the same tab
+            window.location.href = parsed.href;
           }
         } catch {
           /* ignore invalid URLs */
@@ -208,6 +217,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   }, [setVisitorProfile]);
 
   // Load persisted messages + record visit on mount
+  // Also check if user clicked a product link — if so, auto-open and request a summary
   useEffect(() => {
     const saved = loadMessages();
     if (saved && saved.length > 0) {
@@ -221,6 +231,26 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       purchasedProducts: ctx?.purchasedProducts,
     });
     setVisitorProfile(profile);
+
+    // Check for a pending product summary (set before same-tab navigation)
+    const pendingRaw = localStorage.getItem("rtg_pending_product_summary");
+    if (pendingRaw) {
+      localStorage.removeItem("rtg_pending_product_summary");
+      try {
+        const pending = JSON.parse(pendingRaw);
+        if (pending.productName) {
+          // Auto-open the widget and send a summary request
+          setIsOpen(true);
+          setTimeout(() => {
+            handleSendRef.current?.(
+              `I just clicked on ${pending.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
+            );
+          }, 500);
+        }
+      } catch {
+        /* ignore corrupted data */
+      }
+    }
 
     setLoaded(true);
   }, [setMessages]);

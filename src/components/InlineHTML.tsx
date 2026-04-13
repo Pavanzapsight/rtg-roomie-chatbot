@@ -31,9 +31,9 @@ const IFRAME_BRIDGE_SCRIPT = `
   }
 
   /** Opens the Rooms To Go product page (parent window; works inside sandboxed iframe). */
-  function openProduct(url) {
+  function openProduct(url, productName) {
     if (!url) return;
-    window.parent.postMessage({ type: 'rtg-open-url', url: String(url).trim() }, '*');
+    window.parent.postMessage({ type: 'rtg-open-url', url: String(url).trim(), productName: productName || '' }, '*');
   }
 
   // Auto-resize iframe to fit content — tight, no blank space
