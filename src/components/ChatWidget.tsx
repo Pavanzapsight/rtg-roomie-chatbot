@@ -61,7 +61,7 @@ function getPageContext(): PageContext | null {
 function getDwellThreshold(): number {
   if (typeof window === "undefined") return 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 0;
+  return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 60000; // default 1 minute
 }
 
 // Stream a response from the API
@@ -383,7 +383,7 @@ export function ChatWidget() {
   const handleClose = useCallback(() => {
     setIsOpen(false);
     if (hasAutoOpened && typeof document !== "undefined") {
-      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=1800";
+      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300"; // 5 min cooldown
     }
   }, [hasAutoOpened]);
 
