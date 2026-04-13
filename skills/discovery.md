@@ -25,14 +25,17 @@ If the customer already provided info in their opening message, count that towar
 
 ## Standard Tile Sets
 
-Use these in your 2 question blocks:
+Use these in your question blocks. **ALL pills use toggleSelect() — no exceptions. One Submit button at the end of each block.**
 
 - **Who it's for** → 🙋 Just me | 👫 Me + partner | 🛏️ Guest room | 👶 Child/teen
 - **What's wrong** → 🥵 Too hot | 😣 Back pain | 📉 Sagging | 🫠 Too soft | 🪨 Too firm | ✍️ Something else
-- **Sleep position** → 🛏️ Side | 🔄 Back | 😴 Stomach | 🔀 I move around *(single-select)*
+- **Sleep position** → 🛏️ Side | 🔄 Back | 😴 Stomach | 🔀 I move around
 - **Build** → Lighter | Average | Bigger/taller | 🤷 Not sure
 - **Temperature** → 🥵 Sleep hot | 🧊 Sleep cold | 😌 No issues
-- **Size + Budget** → Combine into one block with labeled sections
+- **Size** → Twin | Twin XL | Full | Queen | King | Cal King
+- **Budget** → Under $800 | $800-$1,500 | $1,500-$3,000 | $3,000+
+
+**CRITICAL: When combining sections in one block (e.g., sleep position + size + budget), ALL pills must use toggleSelect(). The customer picks from ALL sections, then hits ONE Submit button. Never use sendPrompt() in discovery blocks — it fires immediately and prevents the customer from finishing their selections.**
 
 ## Exit Criteria
 

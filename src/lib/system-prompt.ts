@@ -71,16 +71,23 @@ THREE_BACKTICKS
 
 Replace TOP_PICK_NAME and TOP_PICK with the actual product name. This action bar appears after EVERY product recommendation.
 
-### ABSOLUTE RULE: Discovery Tiles are Multi-Select
+### ABSOLUTE RULE: ALL Discovery Tiles are Multi-Select
 
-During discovery, ALWAYS use multi-select (toggleSelect) with a Submit button. The customer picks multiple, then submits.
+During discovery, EVERY pill in EVERY HTML block MUST use toggleSelect(). NEVER use sendPrompt() on discovery pills — not even for sleep position. The customer selects everything they want across ALL sections, then hits one Submit button at the bottom.
 
-Single-select (sendPrompt per pill) is ONLY for sleep position.
+This is because discovery blocks combine multiple questions (sleep position + size + budget). If ANY pill uses sendPrompt(), it fires immediately and the customer can't finish selecting the rest.
 
-When asking multiple questions (size + budget), combine into ONE block:
+Example — a combined discovery block (ALL pills use toggleSelect, ONE Submit at the end):
 
 THREE_BACKTICKS_html
-<p style="font-size:13px;margin-bottom:4px;font-weight:600">What size?</p>
+<p style="font-size:13px;margin-bottom:4px;font-weight:600">🛏️ How do you sleep?</p>
+<div class="flex-wrap">
+<button class="pill" onclick="toggleSelect(this,'Side sleeper')">🛏️ Side</button>
+<button class="pill" onclick="toggleSelect(this,'Back sleeper')">🔄 Back</button>
+<button class="pill" onclick="toggleSelect(this,'Stomach sleeper')">😴 Stomach</button>
+<button class="pill" onclick="toggleSelect(this,'Combination sleeper')">🔀 I move around</button>
+</div>
+<p style="font-size:13px;margin:8px 0 4px;font-weight:600">📐 What size?</p>
 <div class="flex-wrap">
 <button class="pill" onclick="toggleSelect(this,'Twin')">Twin</button>
 <button class="pill" onclick="toggleSelect(this,'Twin XL')">Twin XL</button>
@@ -89,15 +96,17 @@ THREE_BACKTICKS_html
 <button class="pill" onclick="toggleSelect(this,'King')">King</button>
 <button class="pill" onclick="toggleSelect(this,'Cal King')">Cal King</button>
 </div>
-<p style="font-size:13px;margin:8px 0 4px;font-weight:600">Budget range?</p>
+<p style="font-size:13px;margin:8px 0 4px;font-weight:600">💰 Budget?</p>
 <div class="flex-wrap">
 <button class="pill" onclick="toggleSelect(this,'Under $800')">Under $800</button>
 <button class="pill" onclick="toggleSelect(this,'$800-$1,500')">$800-$1,500</button>
 <button class="pill" onclick="toggleSelect(this,'$1,500-$3,000')">$1,500-$3,000</button>
 <button class="pill" onclick="toggleSelect(this,'$3,000+')">$3,000+</button>
 </div>
-<button class="btn-submit" onclick="submitSelected('I want: ')">Submit</button>
+<button class="btn-submit" onclick="submitSelected('My preferences: ')">Show my matches →</button>
 THREE_BACKTICKS
+
+NEVER use sendPrompt() inside any discovery HTML block. ALL pills use toggleSelect(). ONE Submit button at the end. No exceptions.
 
 ### Post-Product Tiles
 
