@@ -119,11 +119,12 @@ A 130 lb side sleeper on a firm mattress gets pressure pain. A 250 lb back sleep
 ## Stage Transition Tags
 
 End every response with exactly one tag on its own line (hidden from customer):
-- `[STAGE:greeting]`
-- `[STAGE:discovery]`
-- `[STAGE:recommendation]`
-- `[STAGE:comparison]`
-- `[STAGE:closing]`
+- `[STAGE:proactive]` — proactive interjection (auto-opened, no user input yet)
+- `[STAGE:greeting]` — greeting after user engages
+- `[STAGE:discovery]` — gathering preferences
+- `[STAGE:recommendation]` — showing products
+- `[STAGE:comparison]` — comparing products
+- `[STAGE:closing]` — confirming choice, cross-sell, wrap-up
 
 ## Catalog Data
 

@@ -2,11 +2,23 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 export type ConversationStage =
+  | "proactive"
   | "greeting"
   | "discovery"
   | "recommendation"
   | "comparison"
   | "closing";
+
+export interface PageContext {
+  page: "pdp" | "category" | "cart" | "homepage" | "search" | "unknown";
+  productName?: string;
+  productSku?: string;
+  category?: string;
+  cartItems?: string[];
+  searchQuery?: string;
+  dwellSeconds?: number;
+  pageHistory?: string[];
+}
 
 const cache: Record<string, string> = {};
 
@@ -125,7 +137,8 @@ Output format: three backticks + html → HTML → three closing backticks. Prod
 
 export function buildSystemPrompt(
   catalogData: string,
-  stage: ConversationStage
+  stage: ConversationStage,
+  pageContext?: PageContext
 ): string {
   // Load universal rules
   const base = loadFile("SYSTEM_PROMPT.md").replace(
@@ -136,6 +149,12 @@ export function buildSystemPrompt(
   // Load stage-specific skill
   const skill = loadFile(`skills/${stage}.md`);
 
-  // Combine: universal rules + current stage skill + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  // Build page context block for proactive stage
+  let pageContextBlock = "";
+  if (pageContext && stage === "proactive") {
+    pageContextBlock = `\n\n# PAGE CONTEXT\n\n\`\`\`json\n${JSON.stringify(pageContext, null, 2)}\n\`\`\``;
+  }
+
+  // Combine: universal rules + current stage skill + page context + HTML output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${pageContextBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }

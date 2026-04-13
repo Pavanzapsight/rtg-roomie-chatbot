@@ -1,5 +1,9 @@
 import { spawn } from "child_process";
-import { buildSystemPrompt, type ConversationStage } from "@/lib/system-prompt";
+import {
+  buildSystemPrompt,
+  type ConversationStage,
+  type PageContext,
+} from "@/lib/system-prompt";
 import { getCatalogData } from "@/lib/catalog";
 
 interface ChatMessage {
@@ -8,9 +12,15 @@ interface ChatMessage {
   text: string;
 }
 
+interface ChatRequest {
+  messages: ChatMessage[];
+  type?: "chat" | "proactive";
+  pageContext?: PageContext;
+}
+
 // Extract stage tag from response text
 const STAGE_REGEX =
-  /\[STAGE:(greeting|discovery|recommendation|comparison|closing)\]\s*$/;
+  /\[STAGE:(proactive|greeting|discovery|recommendation|comparison|closing)\]\s*$/;
 
 function detectStageFromResponse(text: string): ConversationStage | null {
   const match = text.match(STAGE_REGEX);
@@ -36,25 +46,11 @@ function inferStage(messages: ChatMessage[]): ConversationStage {
   return "discovery";
 }
 
-export async function POST(request: Request) {
-  const { messages }: { messages: ChatMessage[] } = await request.json();
-
-  const catalogData = getCatalogData();
-  const currentStage = inferStage(messages);
-  const systemPrompt = buildSystemPrompt(catalogData, currentStage);
-
-  // Build conversation prompt — strip stage tags from history
-  const conversationParts: string[] = [];
-  for (const msg of messages) {
-    if (msg.role === "user") {
-      conversationParts.push(`User: ${msg.text}`);
-    } else if (msg.role === "assistant" && msg.id !== "welcome") {
-      conversationParts.push(`Assistant: ${stripStageTag(msg.text)}`);
-    }
-  }
-
-  const userPrompt = conversationParts.join("\n\n");
-
+function buildStreamResponse(
+  systemPrompt: string,
+  userPrompt: string,
+  currentStage: ConversationStage
+): Response {
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
@@ -95,7 +91,6 @@ export async function POST(request: Request) {
           try {
             const event = JSON.parse(line);
 
-            // Token-level streaming via content_block_delta
             if (
               event.type === "stream_event" &&
               event.event?.type === "content_block_delta" &&
@@ -103,7 +98,6 @@ export async function POST(request: Request) {
             ) {
               const delta = event.event.delta.text;
               accumulatedText += delta;
-              // Send accumulated text (strip stage tag in case it's partial)
               const display = stripStageTag(accumulatedText);
               controller.enqueue(
                 encoder.encode(
@@ -112,7 +106,6 @@ export async function POST(request: Request) {
               );
             }
 
-            // Final result with complete text
             if (event.type === "result" && event.result) {
               const resultText = stripStageTag(event.result);
               const nextStage = detectStageFromResponse(event.result);
@@ -180,4 +173,34 @@ export async function POST(request: Request) {
       Connection: "keep-alive",
     },
   });
+}
+
+export async function POST(request: Request) {
+  const body: ChatRequest = await request.json();
+  const { messages, type, pageContext } = body;
+
+  const catalogData = getCatalogData();
+
+  // Proactive interjection — no prior conversation
+  if (type === "proactive" && pageContext) {
+    const systemPrompt = buildSystemPrompt(catalogData, "proactive", pageContext);
+    const userPrompt = `Generate a proactive interjection message for this page context: ${JSON.stringify(pageContext)}`;
+    return buildStreamResponse(systemPrompt, userPrompt, "proactive");
+  }
+
+  // Normal chat flow
+  const currentStage = inferStage(messages);
+  const systemPrompt = buildSystemPrompt(catalogData, currentStage);
+
+  const conversationParts: string[] = [];
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      conversationParts.push(`User: ${msg.text}`);
+    } else if (msg.role === "assistant" && msg.id !== "welcome") {
+      conversationParts.push(`Assistant: ${stripStageTag(msg.text)}`);
+    }
+  }
+
+  const userPrompt = conversationParts.join("\n\n");
+  return buildStreamResponse(systemPrompt, userPrompt, currentStage);
 }
