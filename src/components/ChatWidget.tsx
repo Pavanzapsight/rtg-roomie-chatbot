@@ -190,8 +190,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
                 productName,
               }));
             }
-            // Navigate in the same tab
-            window.location.href = parsed.href;
+            // Navigate the top-level page (not the iframe)
+            const target = window.top || window.parent || window;
+            target.location.href = parsed.href;
           }
         } catch {
           /* ignore invalid URLs */
