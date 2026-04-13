@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, type KeyboardEvent } from "react";
 
 const QUICK_CHIPS = [
   "Side sleeper",
@@ -22,6 +22,14 @@ export function ChatInput({
 }) {
   const [input, setInput] = useState("");
   const [showChips, setShowChips] = useState(true);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the input when not disabled
+  useEffect(() => {
+    if (!disabled && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [disabled]);
 
   const handleSubmit = () => {
     if (!input.trim() || disabled) return;
@@ -78,18 +86,20 @@ export function ChatInput({
       {/* Input area */}
       <div className="flex items-end gap-2 p-3">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask about mattresses..."
           disabled={disabled}
           rows={1}
-          className="flex-1 resize-none rounded-xl border px-4 py-2.5 text-[15px] leading-relaxed placeholder:text-gray-400 disabled:opacity-50"
+          className="flex-1 resize-none rounded-xl px-4 py-2.5 text-[15px] leading-relaxed placeholder:text-gray-400 disabled:opacity-50"
           style={{
-            borderColor: "var(--rtg-gray-200)",
+            border: "1px solid var(--rtg-gray-200)",
             color: "var(--rtg-charcoal)",
-            backgroundColor: "white",
+            backgroundColor: "var(--rtg-gray-50)",
             maxHeight: 100,
+            outline: "none",
           }}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement;

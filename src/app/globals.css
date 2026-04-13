@@ -117,10 +117,15 @@ body {
   border-radius: 3px;
 }
 
-/* Focus states */
+/* Focus states — skip textarea to avoid heavy blue border */
 *:focus-visible {
   outline: 2px solid var(--rtg-blue);
   outline-offset: 2px;
+}
+
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--rtg-gray-500) !important;
 }
 
 /* Streamdown overrides for chat bubbles */

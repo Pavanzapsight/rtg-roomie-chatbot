@@ -20,14 +20,14 @@ export function RTGLogo({ size = 28 }: { size?: number }) {
     >
       {/* Dark navy background circle */}
       <circle cx={cx} cy={cy} r={bgR} fill="#1B3668" />
-      {/* Top-left: Red */}
-      <circle cx={cx - gap} cy={cy - gap} r={dotR} fill="#E4002B" />
-      {/* Top-right: Yellow/Gold */}
+      {/* Top-left: Yellow */}
+      <circle cx={cx - gap} cy={cy - gap} r={dotR} fill="#F2C75C" />
+      {/* Top-right: Yellow */}
       <circle cx={cx + gap} cy={cy - gap} r={dotR} fill="#F2C75C" />
-      {/* Bottom-left: Green */}
-      <circle cx={cx - gap} cy={cy + gap} r={dotR} fill="#4CAF50" />
-      {/* Bottom-right: Blue */}
-      <circle cx={cx + gap} cy={cy + gap} r={dotR} fill="#3B7DD8" />
+      {/* Bottom-left: Red */}
+      <circle cx={cx - gap} cy={cy + gap} r={dotR} fill="#E4002B" />
+      {/* Bottom-right: Green */}
+      <circle cx={cx + gap} cy={cy + gap} r={dotR} fill="#4CAF50" />
     </svg>
   );
 }
