@@ -93,13 +93,13 @@ function getPageContext(): PageContext | null {
 function getDwellThreshold(): number {
   if (typeof window === "undefined") return 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 60000; // default 1 minute
+  return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 30000; // default 30 seconds
 }
 
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [hasInterjected, setHasInterjected] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(
     null
   );
@@ -111,7 +111,11 @@ export function ChatWidget() {
   const visitorProfileRef = useRef(visitorProfile);
   const selectedModelRef = useRef(selectedModel);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
+  const isOpenRef = useRef(isOpen);
 
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
   useEffect(() => {
     visitorProfileRef.current = visitorProfile;
   }, [visitorProfile]);
@@ -273,9 +277,15 @@ export function ChatWidget() {
     }
   }
 
-  // Proactive auto-open: dwell timer
+  // Proactive interjection: dwell timer runs regardless of widget open/closed state.
+  // Fires once after 30s of idle (no user messages). If widget is closed, opens it.
+  // If widget is already open, injects the message into the live conversation.
   useEffect(() => {
-    if (isOpen || hasAutoOpened || !loaded) return;
+    if (hasInterjected || !loaded) return;
+
+    // Don't interject if user has already been chatting
+    const userMessages = messages.filter((m) => m.role === "user");
+    if (userMessages.length > 0) return;
 
     const threshold = getDwellThreshold();
     if (threshold <= 0) return;
@@ -290,33 +300,37 @@ export function ChatWidget() {
       if (!pageContext) return;
       pageContext.dwellSeconds = Math.round(threshold / 1000);
 
-      setHasAutoOpened(true);
-      setIsOpen(true);
+      setHasInterjected(true);
 
-      const controller = new AbortController();
-      const pageCtx = pageContext;
+      // Open the widget if it's closed
+      if (!isOpenRef.current) {
+        setIsOpen(true);
+      }
+
       try {
         requestExtrasRef.current = {
           type: "proactive",
-          pageContext: pageCtx,
+          pageContext,
         };
         const chunkStream = await transport.sendMessages({
           trigger: "submit-message",
           chatId: CHAT_ID,
           messageId: undefined,
           messages: [],
-          abortSignal: controller.signal,
+          abortSignal: new AbortController().signal,
         });
         await consumeAssistantStream(chunkStream);
       } catch {
-        setMessages([welcomeUi]);
+        if (!isOpenRef.current) {
+          setMessages([welcomeUi]);
+        }
       }
     }, threshold);
 
     return () => {
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
     };
-  }, [isOpen, hasAutoOpened, loaded, transport, setMessages]);
+  }, [hasInterjected, loaded, messages, transport, setMessages]);
 
   // Generate personalized greeting for returning visitors when widget opens
   const generateReturningGreeting = useCallback(async () => {
@@ -376,10 +390,10 @@ export function ChatWidget() {
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
-    if (hasAutoOpened && typeof document !== "undefined") {
+    if (hasInterjected && typeof document !== "undefined") {
       document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300";
     }
-  }, [hasAutoOpened]);
+  }, [hasInterjected]);
 
   return (
     <>
