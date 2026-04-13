@@ -43,14 +43,33 @@ THREE_BACKTICKS_html
 <span class="card-tag tag-value">TYPE</span><span class="card-tag tag-cooling">FEATURE</span>
 <p style="margin:6px 0;font-size:13px">One line about why this fits their needs</p>
 <div class="card-price">$X,XXX Size</div>
-<div style="margin-top:8px;display:flex;gap:8px">
+<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button class="btn-primary" onclick="sendPrompt('Tell me more about PRODUCT NAME')">Details</button>
 <button class="btn-secondary" onclick="sendPrompt('Compare PRODUCT NAME')">Compare</button>
+<button style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
 </div>
 </div>
 THREE_BACKTICKS
 
 Each product = its own separate card in its own HTML code block.
+
+### ABSOLUTE RULE: Post-Product Action Bar
+
+After showing ALL product cards, you MUST show this action bar as a SEPARATE HTML code block. All 4 options always appear:
+
+THREE_BACKTICKS_html
+<div style="margin-top:4px">
+<p style="font-size:13px;margin-bottom:6px;font-weight:500">What would you like to do?</p>
+<div class="flex-wrap">
+<button class="pill" onclick="sendPrompt('Tell me more about TOP_PICK_NAME')">👀 More on TOP_PICK</button>
+<button class="pill" onclick="sendPrompt('Compare these mattresses')">⚖️ Compare them</button>
+<button class="pill" onclick="sendPrompt('Show me different options')">🔄 Other options</button>
+<button class="pill" onclick="sendPrompt('I want to refine my preferences')">🎯 Refine more</button>
+</div>
+</div>
+THREE_BACKTICKS
+
+Replace TOP_PICK_NAME and TOP_PICK with the actual product name. This action bar appears after EVERY product recommendation.
 
 ### ABSOLUTE RULE: Discovery Tiles are Multi-Select
 

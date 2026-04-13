@@ -125,6 +125,13 @@ const IFRAME_BASE_STYLES = `
     font-size: 13px; cursor: pointer; transition: all 0.15s;
   }
   .btn-secondary:hover { background: #0033A0; color: white; }
+  /* Add to cart button */
+  .btn-cart {
+    background: #2E7D32; color: white; border: none;
+    padding: 8px 16px; border-radius: 8px; font-weight: 600;
+    font-size: 13px; cursor: pointer; transition: background 0.15s;
+  }
+  .btn-cart:hover { background: #1B5E20; }
 
   /* Submit button for multi-select */
   .btn-submit {
