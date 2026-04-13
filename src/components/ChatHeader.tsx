@@ -1,5 +1,7 @@
 "use client";
 
+import { RTGLogo } from "./RTGLogo";
+
 const MODELS = [
   { key: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
   { key: "gemini-flash-3", label: "Gemini Flash 3.0" },
@@ -24,7 +26,14 @@ export function ChatHeader({
       className="flex h-16 shrink-0 items-center justify-between px-4"
       style={{ backgroundColor: "var(--rtg-red)" }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
+        {/* R2G2-style logo */}
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-full"
+          style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+        >
+          <RTGLogo size={26} />
+        </div>
         <div className="flex flex-col">
           <span
             className="text-sm font-bold leading-tight tracking-wide"
@@ -36,7 +45,7 @@ export function ChatHeader({
             className="text-xs font-medium leading-tight"
             style={{ color: "rgba(255,255,255,0.85)" }}
           >
-            Roomie — Mattress Advisor
+            Shopping Assistant
           </span>
         </div>
       </div>
