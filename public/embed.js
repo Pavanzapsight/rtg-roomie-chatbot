@@ -13,6 +13,13 @@
   var MSG_CONTEXT = "rtg-page-context-update";
   var MSG_READY = "rtg-embed-ready";
 
+  // Storage keys the iframe may read/write via the bridge
+  var STORAGE_KEYS = [
+    "rtg_roomie_chat",
+    "rtg_pending_product_summary",
+    "rtg_visitor_profile"
+  ];
+
   function inject() {
     var s = document.currentScript;
     if (!s || !s.src) return;
@@ -67,11 +74,61 @@
       if (Object.keys(merged).length) sendToIframe(merged);
     }
 
+    // Send stored chat data to iframe on load so it can restore conversation
+    function sendStorageInit() {
+      if (!iframe.contentWindow) return;
+      var data = {};
+      STORAGE_KEYS.forEach(function (k) {
+        try {
+          var v = localStorage.getItem(k);
+          if (v) data[k] = v;
+        } catch (_) {
+          /* localStorage may be unavailable */
+        }
+      });
+      iframe.contentWindow.postMessage(
+        { type: "rtg-storage-init", data: data },
+        origin
+      );
+    }
+
     window.addEventListener("message", function (e) {
       if (e.origin !== origin) return;
-      if (!e.data || e.data.type !== MSG_READY) return;
-      ready = true;
-      flushPending();
+      if (!e.data) return;
+
+      // Iframe is ready
+      if (e.data.type === MSG_READY) {
+        ready = true;
+        sendStorageInit();
+        flushPending();
+        return;
+      }
+
+      // Navigate the host page (same tab)
+      if (e.data.type === "rtg-navigate" && typeof e.data.url === "string") {
+        window.location.href = e.data.url;
+        return;
+      }
+
+      // Storage bridge: set
+      if (e.data.type === "rtg-storage-set" && typeof e.data.key === "string") {
+        try {
+          localStorage.setItem(e.data.key, e.data.value);
+        } catch (_) {
+          /* quota or unavailable */
+        }
+        return;
+      }
+
+      // Storage bridge: remove
+      if (e.data.type === "rtg-storage-remove" && typeof e.data.key === "string") {
+        try {
+          localStorage.removeItem(e.data.key);
+        } catch (_) {
+          /* ignore */
+        }
+        return;
+      }
     });
 
     document.body.appendChild(iframe);

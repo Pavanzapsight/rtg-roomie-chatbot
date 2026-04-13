@@ -14,7 +14,15 @@ import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { RTGLogo } from "./RTGLogo";
 import { WELCOME_MESSAGE } from "@/lib/constants";
-import { saveMessages, loadMessages, clearMessages } from "@/lib/chat-storage";
+import {
+  saveMessages,
+  loadMessages,
+  clearMessages,
+  savePendingProduct,
+  loadPendingProduct,
+  handleStorageInit,
+  isBridgeReady,
+} from "@/lib/chat-storage";
 import { stripStageTag } from "@/lib/stage-tag";
 import {
   type VisitorProfile,
@@ -185,14 +193,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             // Save pending product summary so the widget can auto-ask on next load
             const productName = e.data.productName || parsed.pathname.split("/").pop()?.replace(/-/g, " ") || "";
             if (productName) {
-              localStorage.setItem("rtg_pending_product_summary", JSON.stringify({
-                url: parsed.href,
-                productName,
-              }));
+              savePendingProduct(productName, parsed.href);
             }
-            // Navigate the top-level page (not the iframe)
-            const target = window.top || window.parent || window;
-            target.location.href = parsed.href;
+            // Navigate the host page via embed.js bridge (or top window if not embedded)
+            if (window.parent !== window) {
+              window.parent.postMessage({ type: "rtg-navigate", url: parsed.href }, "*");
+            } else {
+              window.location.href = parsed.href;
+            }
           }
         } catch {
           /* ignore invalid URLs */
@@ -217,14 +225,27 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     return () => window.removeEventListener("message", handleMessage);
   }, [setVisitorProfile]);
 
-  // Load persisted messages + record visit on mount
-  // Also check if user clicked a product link — if so, auto-open and request a summary
-  useEffect(() => {
+  // Restore chat from storage (direct or via bridge from embed.js)
+  const restoreChat = useCallback(() => {
     const saved = loadMessages();
     if (saved && saved.length > 0) {
       setMessages(saved.map(chatMessageToUi));
     }
 
+    const pending = loadPendingProduct();
+    if (pending) {
+      setIsOpen(true);
+      setTimeout(() => {
+        handleSendRef.current?.(
+          `I just clicked on ${pending.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
+        );
+      }, 500);
+    }
+  }, [setMessages]);
+
+  // Load persisted messages + record visit on mount
+  // In embed mode, wait for rtg-storage-init from host page before restoring
+  useEffect(() => {
     const ctx = getPageContext();
     const profile = recordVisit({
       productName: ctx?.productName,
@@ -233,28 +254,39 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     });
     setVisitorProfile(profile);
 
-    // Check for a pending product summary (set before same-tab navigation)
-    const pendingRaw = localStorage.getItem("rtg_pending_product_summary");
-    if (pendingRaw) {
-      localStorage.removeItem("rtg_pending_product_summary");
-      try {
-        const pending = JSON.parse(pendingRaw);
-        if (pending.productName) {
-          // Auto-open the widget and send a summary request
-          setIsOpen(true);
-          setTimeout(() => {
-            handleSendRef.current?.(
-              `I just clicked on ${pending.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
-            );
-          }, 500);
-        }
-      } catch {
-        /* ignore corrupted data */
-      }
-    }
+    const inIframe = typeof window !== "undefined" && window.parent !== window;
 
-    setLoaded(true);
-  }, [setMessages]);
+    if (inIframe) {
+      // Listen for storage init from embed.js bridge
+      function onStorageInit(e: MessageEvent) {
+        if (e.data?.type === "rtg-storage-init" && e.data.data) {
+          handleStorageInit(e.data.data);
+          restoreChat();
+          setLoaded(true);
+          window.removeEventListener("message", onStorageInit);
+        }
+      }
+      window.addEventListener("message", onStorageInit);
+
+      // Fallback: if bridge doesn't respond in 1s, try direct localStorage
+      const fallbackTimer = setTimeout(() => {
+        if (!isBridgeReady()) {
+          window.removeEventListener("message", onStorageInit);
+          restoreChat();
+          setLoaded(true);
+        }
+      }, 1000);
+
+      return () => {
+        window.removeEventListener("message", onStorageInit);
+        clearTimeout(fallbackTimer);
+      };
+    } else {
+      // Not embedded — load directly
+      restoreChat();
+      setLoaded(true);
+    }
+  }, [setMessages, restoreChat]);
 
   // Save messages whenever they change
   useEffect(() => {
