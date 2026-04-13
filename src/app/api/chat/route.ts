@@ -3,6 +3,7 @@ import {
   buildSystemPrompt,
   type ConversationStage,
   type PageContext,
+  type VisitorProfile,
 } from "@/lib/system-prompt";
 import { getCatalogData } from "@/lib/catalog";
 
@@ -14,13 +15,14 @@ interface ChatMessage {
 
 interface ChatRequest {
   messages: ChatMessage[];
-  type?: "chat" | "proactive";
+  type?: "chat" | "proactive" | "returning";
   pageContext?: PageContext;
+  visitorProfile?: VisitorProfile;
 }
 
 // Extract stage tag from response text
 const STAGE_REGEX =
-  /\[STAGE:(proactive|greeting|discovery|recommendation|comparison|closing)\]\s*$/;
+  /\[STAGE:(proactive|returning|greeting|discovery|recommendation|comparison|closing)\]\s*$/;
 
 function detectStageFromResponse(text: string): ConversationStage | null {
   const match = text.match(STAGE_REGEX);
@@ -177,20 +179,27 @@ function buildStreamResponse(
 
 export async function POST(request: Request) {
   const body: ChatRequest = await request.json();
-  const { messages, type, pageContext } = body;
+  const { messages, type, pageContext, visitorProfile } = body;
 
   const catalogData = getCatalogData();
 
   // Proactive interjection — no prior conversation
   if (type === "proactive" && pageContext) {
-    const systemPrompt = buildSystemPrompt(catalogData, "proactive", pageContext);
+    const systemPrompt = buildSystemPrompt(catalogData, "proactive", { pageContext });
     const userPrompt = `Generate a proactive interjection message for this page context: ${JSON.stringify(pageContext)}`;
     return buildStreamResponse(systemPrompt, userPrompt, "proactive");
   }
 
+  // Returning visitor — personalized greeting based on profile
+  if (type === "returning" && visitorProfile) {
+    const systemPrompt = buildSystemPrompt(catalogData, "returning", { visitorProfile });
+    const userPrompt = `Generate a personalized returning visitor greeting based on this profile: ${JSON.stringify(visitorProfile)}`;
+    return buildStreamResponse(systemPrompt, userPrompt, "returning");
+  }
+
   // Normal chat flow
   const currentStage = inferStage(messages);
-  const systemPrompt = buildSystemPrompt(catalogData, currentStage);
+  const systemPrompt = buildSystemPrompt(catalogData, currentStage, { visitorProfile });
 
   const conversationParts: string[] = [];
   for (const msg of messages) {

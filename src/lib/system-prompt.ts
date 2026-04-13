@@ -3,11 +3,23 @@ import { join } from "path";
 
 export type ConversationStage =
   | "proactive"
+  | "returning"
   | "greeting"
   | "discovery"
   | "recommendation"
   | "comparison"
   | "closing";
+
+export interface VisitorProfile {
+  visitCount: number;
+  firstVisit: string;
+  lastVisit: string;
+  viewedProducts: string[];
+  viewedCategories: string[];
+  purchasedProducts: string[];
+  lastConversationStage: string;
+  preferences: Record<string, string>;
+}
 
 export interface PageContext {
   page: "pdp" | "category" | "cart" | "homepage" | "search" | "unknown";
@@ -138,7 +150,10 @@ Output format: three backticks + html → HTML → three closing backticks. Prod
 export function buildSystemPrompt(
   catalogData: string,
   stage: ConversationStage,
-  pageContext?: PageContext
+  options?: {
+    pageContext?: PageContext;
+    visitorProfile?: VisitorProfile;
+  }
 ): string {
   // Load universal rules
   const base = loadFile("SYSTEM_PROMPT.md").replace(
@@ -149,12 +164,17 @@ export function buildSystemPrompt(
   // Load stage-specific skill
   const skill = loadFile(`skills/${stage}.md`);
 
-  // Build page context block for proactive stage
-  let pageContextBlock = "";
-  if (pageContext && stage === "proactive") {
-    pageContextBlock = `\n\n# PAGE CONTEXT\n\n\`\`\`json\n${JSON.stringify(pageContext, null, 2)}\n\`\`\``;
+  // Build context blocks
+  let contextBlocks = "";
+
+  if (options?.pageContext && stage === "proactive") {
+    contextBlocks += `\n\n# PAGE CONTEXT\n\n\`\`\`json\n${JSON.stringify(options.pageContext, null, 2)}\n\`\`\``;
   }
 
-  // Combine: universal rules + current stage skill + page context + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${pageContextBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  if (options?.visitorProfile && (stage === "returning" || stage === "greeting")) {
+    contextBlocks += `\n\n# VISITOR PROFILE\n\n\`\`\`json\n${JSON.stringify(options.visitorProfile, null, 2)}\n\`\`\``;
+  }
+
+  // Combine: universal rules + current stage skill + context + HTML output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextBlocks}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }
