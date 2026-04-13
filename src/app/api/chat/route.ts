@@ -4,6 +4,7 @@ import {
   buildSystemPrompt,
   type VisitorProfile,
   type PageContext,
+  type BrowsingHistoryEntry,
 } from "@/lib/system-prompt";
 import { getCatalogData } from "@/lib/catalog";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
@@ -15,6 +16,7 @@ type ChatRequestBody = {
   messages: UIMessage[];
   type?: "chat" | "proactive" | "returning";
   pageContext?: PageContext;
+  browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
   model?: string;
 };
@@ -59,7 +61,12 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as ChatRequestBody;
-  const { messages = [], type, pageContext, visitorProfile, model } = body;
+  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model } = body;
+
+  // Merge browsing history into page context so it reaches the system prompt
+  const pageContext: PageContext | undefined = rawPageContext
+    ? { ...rawPageContext, browsingHistory: browsingHistory || rawPageContext.browsingHistory }
+    : undefined;
 
   const catalogData = getCatalogData();
   const modelKey = model || DEFAULT_MODEL;
@@ -94,6 +101,7 @@ export async function POST(request: Request) {
     if (type === "returning" && visitorProfile) {
       const systemPrompt = buildSystemPrompt(catalogData, "returning", {
         visitorProfile,
+        pageContext: pageContext ?? undefined,
       });
       const result = streamText({
         model: openrouter.chat(modelId),

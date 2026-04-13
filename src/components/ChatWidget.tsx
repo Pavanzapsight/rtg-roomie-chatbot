@@ -18,10 +18,7 @@ import {
   saveMessages,
   loadMessages,
   clearMessages,
-  savePendingProduct,
-  loadPendingProduct,
-  handleStorageInit,
-  isBridgeReady,
+  initFromBridge,
 } from "@/lib/chat-storage";
 import { stripStageTag } from "@/lib/stage-tag";
 import {
@@ -29,8 +26,9 @@ import {
   recordVisit,
   loadVisitorProfile,
   updateProfileFromChat,
+  initProfileFromBridge,
 } from "@/lib/visitor-profile";
-import type { PageContext } from "@/lib/system-prompt";
+import type { PageContext, BrowsingHistoryEntry } from "@/lib/system-prompt";
 import {
   RTG_PAGE_CONTEXT_MESSAGE,
   isAllowedContextMessageSource,
@@ -46,6 +44,7 @@ export interface ChatMessage {
 export type { PageContext };
 
 const CHAT_ID = "rtg-roomie-chat";
+const DWELL_THRESHOLD = 30000; // 30 seconds
 
 const welcomeUi: UIMessage = {
   id: "welcome",
@@ -76,7 +75,7 @@ function chatMessageToUi(m: ChatMessage): UIMessage {
   };
 }
 
-// Read page context from host page
+// Read page context from host page (standalone mode only)
 function getPageContext(): PageContext | null {
   if (typeof window === "undefined") return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,46 +85,48 @@ function getPageContext(): PageContext | null {
     page: ctx.page || "unknown",
     productName: ctx.productName,
     productSku: ctx.productSku,
+    productPrice: ctx.productPrice,
+    productVendor: ctx.productVendor,
+    productType: ctx.productType,
+    productDescription: ctx.productDescription,
+    productImage: ctx.productImage,
+    productUrl: ctx.productUrl,
+    productTags: ctx.productTags,
     category: ctx.category,
     cartItems: ctx.cartItems,
+    cartTotal: ctx.cartTotal,
+    cartCount: ctx.cartCount,
     searchQuery: ctx.searchQuery,
     pageHistory: ctx.pageHistory,
     purchasedProducts: ctx.purchasedProducts,
+    browsingHistory: ctx.browsingHistory,
   };
-}
-
-function getDwellThreshold(): number {
-  if (typeof window === "undefined") return 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 30000; // default 30 seconds
 }
 
 export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [hasInterjected, setHasInterjected] = useState(false);
-  const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(
-    null
-  );
+  const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const [selectedModel, setSelectedModel] = useState("gemini-flash-3");
+  const [pageContext, setPageContext] = useState<PageContext | null>(null);
+  const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const handleSendRef = useRef<(text: string) => void>(undefined);
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visitorProfileRef = useRef(visitorProfile);
   const selectedModelRef = useRef(selectedModel);
+  const pageContextRef = useRef(pageContext);
+  const browsingHistoryRef = useRef(browsingHistory);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
 
-  useEffect(() => {
-    isOpenRef.current = isOpen;
-  }, [isOpen]);
-  useEffect(() => {
-    visitorProfileRef.current = visitorProfile;
-  }, [visitorProfile]);
-  useEffect(() => {
-    selectedModelRef.current = selectedModel;
-  }, [selectedModel]);
+  useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  useEffect(() => { visitorProfileRef.current = visitorProfile; }, [visitorProfile]);
+  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+  useEffect(() => { pageContextRef.current = pageContext; }, [pageContext]);
+  useEffect(() => { browsingHistoryRef.current = browsingHistory; }, [browsingHistory]);
 
   const transport = useMemo(
     () =>
@@ -134,7 +135,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         prepareSendMessagesRequest: ({ id, messages, body }) => {
           const extras = requestExtrasRef.current;
           requestExtrasRef.current = null;
-          const pageCtx = getPageContext();
+          const ctx = pageContextRef.current || getPageContext();
           return {
             body: {
               id,
@@ -142,7 +143,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               ...(body ?? {}),
               visitorProfile: visitorProfileRef.current ?? undefined,
               model: selectedModelRef.current,
-              ...(pageCtx ? { pageContext: pageCtx } : {}),
+              ...(ctx ? { pageContext: ctx } : {}),
+              browsingHistory: browsingHistoryRef.current.length > 0
+                ? browsingHistoryRef.current : undefined,
               ...extras,
             },
           };
@@ -161,21 +164,67 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const displayMessages: ChatMessage[] = messages.map(uiMessageToChatMessage);
 
-  // Listen for sendPrompt + open URL from inline HTML iframes (sandbox cannot navigate top window)
+  // ── Message listener: handles bridge init, context updates, URL clicks, prompts ──
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
+      // rtg-init: full initialization from embed.js
+      if (e.data?.type === "rtg-init") {
+        const data = e.data;
+
+        // Seed storage from host page's localStorage
+        initFromBridge(data.chatMessages || null, true);
+        initProfileFromBridge(data.visitorProfile || null, true);
+
+        // Set page context and browsing history
+        if (data.pageContext) setPageContext(data.pageContext);
+        if (data.browsingHistory) setBrowsingHistory(data.browsingHistory);
+
+        // Restore chat messages
+        const saved = loadMessages();
+        if (saved && saved.length > 0) {
+          setMessages(saved.map(chatMessageToUi));
+        }
+
+        // Record visit
+        const profile = recordVisit({
+          productName: data.pageContext?.productName,
+          category: data.pageContext?.category,
+          purchasedProducts: data.pageContext?.purchasedProducts,
+        });
+        setVisitorProfile(profile);
+
+        // Handle pending product summary
+        if (data.pendingProduct && data.pendingProduct.productName) {
+          setIsOpen(true);
+          setTimeout(() => {
+            handleSendRef.current?.(
+              `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
+            );
+          }, 800);
+        }
+
+        setLoaded(true);
+        return;
+      }
+
+      // Page context update (from embed.js on SPA navigation or async data)
       if (e.data?.type === RTG_PAGE_CONTEXT_MESSAGE) {
         if (!isAllowedContextMessageSource(e.source)) return;
         const sanitized = sanitizeHostPageContext(e.data.context);
         if (!sanitized) return;
+
+        // In embed mode, update React state directly
+        setPageContext((prev) => prev ? { ...prev, ...sanitized } : sanitized);
+
+        // Also update window context for standalone compatibility
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).RTG_CHAT_CONTEXT = {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ...(window as any).RTG_CHAT_CONTEXT,
           ...sanitized,
         };
-        const ctx = getPageContext();
-        if (ctx) {
+        const ctx = sanitized;
+        if (ctx.productName || ctx.category) {
           const updated = recordVisit({
             productName: ctx.productName,
             category: ctx.category,
@@ -185,28 +234,34 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         }
         return;
       }
+
+      // Product link click from InlineHTML iframe
       if (e.data?.type === "rtg-open-url" && typeof e.data.url === "string") {
         const raw = e.data.url.trim();
         try {
           const parsed = new URL(raw);
           if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-            // Save pending product summary so the widget can auto-ask on next load
-            const productName = e.data.productName || parsed.pathname.split("/").pop()?.replace(/-/g, " ") || "";
-            if (productName) {
-              savePendingProduct(productName, parsed.href);
-            }
-            // Navigate the host page via embed.js bridge (or top window if not embedded)
-            if (window.parent !== window) {
-              window.parent.postMessage({ type: "rtg-navigate", url: parsed.href }, "*");
+            const productName = e.data.productName
+              || parsed.pathname.split("/").pop()?.replace(/-/g, " ")
+              || "";
+
+            if (embed) {
+              // Send to embed.js: save pending product + navigate host page
+              window.parent.postMessage({
+                type: "rtg-navigate",
+                url: parsed.href,
+                pendingProduct: productName ? { productName, url: parsed.href } : undefined,
+              }, "*");
             } else {
+              // Standalone: navigate directly
               window.location.href = parsed.href;
             }
           }
-        } catch {
-          /* ignore invalid URLs */
-        }
+        } catch { /* ignore invalid URLs */ }
         return;
       }
+
+      // Quick-reply prompt from InlineHTML iframe
       if (e.data?.type === "rtg-send-prompt" && e.data.text) {
         if (
           e.data.text === "__dismiss__" ||
@@ -223,30 +278,23 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [setVisitorProfile]);
+  }, [embed, setMessages]);
 
-  // Restore chat from storage (direct or via bridge from embed.js)
-  const restoreChat = useCallback(() => {
+  // ── Standalone init (non-embed mode) ──
+  useEffect(() => {
+    if (embed) return; // embed mode waits for rtg-init message
+
+    initFromBridge(null, false);
+    initProfileFromBridge(null, false);
+
     const saved = loadMessages();
     if (saved && saved.length > 0) {
       setMessages(saved.map(chatMessageToUi));
     }
 
-    const pending = loadPendingProduct();
-    if (pending) {
-      setIsOpen(true);
-      setTimeout(() => {
-        handleSendRef.current?.(
-          `I just clicked on ${pending.productName}. Give me a quick summary of why this is a good fit for me based on our conversation.`
-        );
-      }, 500);
-    }
-  }, [setMessages]);
-
-  // Load persisted messages + record visit on mount
-  // In embed mode, wait for rtg-storage-init from host page before restoring
-  useEffect(() => {
     const ctx = getPageContext();
+    if (ctx) setPageContext(ctx);
+
     const profile = recordVisit({
       productName: ctx?.productName,
       category: ctx?.category,
@@ -254,41 +302,10 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     });
     setVisitorProfile(profile);
 
-    const inIframe = typeof window !== "undefined" && window.parent !== window;
+    setLoaded(true);
+  }, [embed, setMessages]);
 
-    if (inIframe) {
-      // Listen for storage init from embed.js bridge
-      function onStorageInit(e: MessageEvent) {
-        if (e.data?.type === "rtg-storage-init" && e.data.data) {
-          handleStorageInit(e.data.data);
-          restoreChat();
-          setLoaded(true);
-          window.removeEventListener("message", onStorageInit);
-        }
-      }
-      window.addEventListener("message", onStorageInit);
-
-      // Fallback: if bridge doesn't respond in 1s, try direct localStorage
-      const fallbackTimer = setTimeout(() => {
-        if (!isBridgeReady()) {
-          window.removeEventListener("message", onStorageInit);
-          restoreChat();
-          setLoaded(true);
-        }
-      }, 1000);
-
-      return () => {
-        window.removeEventListener("message", onStorageInit);
-        clearTimeout(fallbackTimer);
-      };
-    } else {
-      // Not embedded — load directly
-      restoreChat();
-      setLoaded(true);
-    }
-  }, [setMessages, restoreChat]);
-
-  // Save messages whenever they change
+  // Save messages whenever they change (to bridge or localStorage)
   useEffect(() => {
     if (loaded) {
       saveMessages(displayMessages);
@@ -335,18 +352,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }
 
-  // Proactive interjection: dwell timer runs regardless of widget open/closed state.
-  // Fires once after 30s of idle (no user messages). If widget is closed, opens it.
-  // If widget is already open, injects the message into the live conversation.
+  // Proactive interjection: fires after 30s of idle (no user messages)
   useEffect(() => {
     if (hasInterjected || !loaded) return;
 
-    // Don't interject if user has already been chatting
     const userMessages = messages.filter((m) => m.role === "user");
     if (userMessages.length > 0) return;
-
-    const threshold = getDwellThreshold();
-    if (threshold <= 0) return;
 
     if (typeof document !== "undefined") {
       const dismissed = document.cookie.includes("rtg_proactive_dismissed=1");
@@ -354,13 +365,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
 
     dwellTimerRef.current = setTimeout(async () => {
-      const pageContext = getPageContext();
-      if (!pageContext) return;
-      pageContext.dwellSeconds = Math.round(threshold / 1000);
+      const ctx = pageContextRef.current || getPageContext();
+      if (!ctx) return;
+      ctx.dwellSeconds = Math.round(DWELL_THRESHOLD / 1000);
 
       setHasInterjected(true);
 
-      // Open the widget if it's closed
       if (!isOpenRef.current) {
         setIsOpen(true);
       }
@@ -368,7 +378,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       try {
         requestExtrasRef.current = {
           type: "proactive",
-          pageContext,
+          pageContext: ctx,
         };
         const chunkStream = await transport.sendMessages({
           trigger: "submit-message",
@@ -383,7 +393,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setMessages([welcomeUi]);
         }
       }
-    }, threshold);
+    }, DWELL_THRESHOLD);
 
     return () => {
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);

@@ -1,4 +1,4 @@
-import type { PageContext } from "@/lib/system-prompt";
+import type { PageContext, BrowsingHistoryEntry } from "@/lib/system-prompt";
 
 /** Parent → iframe postMessage type (see public/embed.js). */
 export const RTG_PAGE_CONTEXT_MESSAGE = "rtg-page-context-update" as const;
@@ -23,6 +23,28 @@ function strArr(v: unknown, maxItems = 40, maxLen = 400): string[] | undefined {
     .filter((x): x is string => typeof x === "string" && x.length > 0)
     .map((x) => (x.length > maxLen ? x.slice(0, maxLen) : x))
     .slice(0, maxItems);
+  return out.length ? out : undefined;
+}
+
+function num(v: unknown): number | undefined {
+  if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
+  return v;
+}
+
+function historyArr(v: unknown): BrowsingHistoryEntry[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: BrowsingHistoryEntry[] = [];
+  for (const item of v.slice(0, 30)) {
+    if (!item || typeof item !== "object") continue;
+    const name = typeof item.productName === "string" ? item.productName : "";
+    if (!name) continue;
+    out.push({
+      productName: name.slice(0, 200),
+      productPrice: typeof item.productPrice === "string" ? item.productPrice.slice(0, 20) : undefined,
+      productUrl: typeof item.productUrl === "string" ? item.productUrl.slice(0, 500) : undefined,
+      viewedAt: typeof item.viewedAt === "string" ? item.viewedAt : new Date().toISOString(),
+    });
+  }
   return out.length ? out : undefined;
 }
 
@@ -52,19 +74,24 @@ export function sanitizeHostPageContext(
     page,
     productName: str(o.productName),
     productSku: str(o.productSku),
+    productPrice: str(o.productPrice, 20),
+    productVendor: str(o.productVendor, 200),
+    productType: str(o.productType, 200),
+    productDescription: str(o.productDescription, 500),
+    productImage: str(o.productImage, 500),
+    productUrl: str(o.productUrl, 500),
+    productTags: strArr(o.productTags, 20, 100),
     category: str(o.category),
     cartItems: strArr(o.cartItems),
+    cartTotal: str(o.cartTotal, 20),
+    cartCount: num(o.cartCount),
     searchQuery: str(o.searchQuery),
     pageHistory: strArr(o.pageHistory),
     purchasedProducts: strArr(o.purchasedProducts),
+    browsingHistory: historyArr(o.browsingHistory),
   };
 
-  if (
-    typeof o.dwellSeconds === "number" &&
-    Number.isFinite(o.dwellSeconds) &&
-    o.dwellSeconds >= 0 &&
-    o.dwellSeconds < 86400
-  ) {
+  if (typeof o.dwellSeconds === "number" && Number.isFinite(o.dwellSeconds) && o.dwellSeconds >= 0 && o.dwellSeconds < 86400) {
     out.dwellSeconds = Math.floor(o.dwellSeconds);
   }
 
@@ -75,7 +102,7 @@ export function sanitizeHostPageContext(
   return out;
 }
 
-/** Only accept context updates from the embedding page’s window, not random frames. */
+/** Only accept context updates from the embedding page's window, not random frames. */
 export function isAllowedContextMessageSource(
   source: MessageEvent["source"]
 ): boolean {

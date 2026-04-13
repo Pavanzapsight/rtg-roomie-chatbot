@@ -21,16 +21,33 @@ export interface VisitorProfile {
   preferences: Record<string, string>;
 }
 
+export interface BrowsingHistoryEntry {
+  productName: string;
+  productPrice?: string;
+  productUrl?: string;
+  viewedAt: string;
+}
+
 export interface PageContext {
   page: "pdp" | "category" | "cart" | "homepage" | "search" | "unknown";
   productName?: string;
   productSku?: string;
+  productPrice?: string;
+  productVendor?: string;
+  productType?: string;
+  productDescription?: string;
+  productImage?: string;
+  productUrl?: string;
+  productTags?: string[];
   category?: string;
   cartItems?: string[];
+  cartTotal?: string;
+  cartCount?: number;
   searchQuery?: string;
   dwellSeconds?: number;
   pageHistory?: string[];
   purchasedProducts?: string[];
+  browsingHistory?: BrowsingHistoryEntry[];
 }
 
 const cache: Record<string, string> = {};
@@ -42,6 +59,100 @@ function loadFile(relativePath: string): string {
   return cache[relativePath];
 }
 
+/**
+ * Build a human-readable context block so the AI knows exactly what the
+ * customer is doing on the website right now.
+ */
+function buildContextNarrative(
+  pageContext?: PageContext,
+  visitorProfile?: VisitorProfile
+): string {
+  if (!pageContext && !visitorProfile) return "";
+
+  const parts: string[] = [];
+
+  if (pageContext) {
+    parts.push("# CURRENT PAGE CONTEXT\n");
+
+    if (pageContext.page === "pdp" && pageContext.productName) {
+      parts.push(`The customer is currently viewing a product page:\n`);
+      parts.push(`- **Product:** ${pageContext.productName}`);
+      if (pageContext.productPrice) parts.push(`- **Price:** ${pageContext.productPrice}`);
+      if (pageContext.productVendor) parts.push(`- **Brand:** ${pageContext.productVendor}`);
+      if (pageContext.productType) parts.push(`- **Type:** ${pageContext.productType}`);
+      if (pageContext.productSku) parts.push(`- **SKU:** ${pageContext.productSku}`);
+      if (pageContext.productDescription) parts.push(`- **Description:** ${pageContext.productDescription}`);
+      if (pageContext.productTags && pageContext.productTags.length) {
+        parts.push(`- **Tags:** ${pageContext.productTags.join(", ")}`);
+      }
+      if (pageContext.productUrl) parts.push(`- **URL:** ${pageContext.productUrl}`);
+      parts.push("");
+      parts.push("Use this product information when the customer asks about what they're looking at. You can proactively reference this product by name.");
+    } else if (pageContext.page === "category") {
+      parts.push(`The customer is browsing a category/collection page.`);
+      if (pageContext.category) parts.push(`- **Category:** ${pageContext.category}`);
+    } else if (pageContext.page === "cart") {
+      parts.push(`The customer is on the cart page.`);
+      if (pageContext.cartItems && pageContext.cartItems.length) {
+        parts.push(`- **Cart items:** ${pageContext.cartItems.join("; ")}`);
+        if (pageContext.cartTotal) parts.push(`- **Cart total:** ${pageContext.cartTotal}`);
+      } else {
+        parts.push(`- The cart appears to be empty.`);
+      }
+    } else if (pageContext.page === "search" && pageContext.searchQuery) {
+      parts.push(`The customer is on search results for: "${pageContext.searchQuery}"`);
+    } else if (pageContext.page === "homepage") {
+      parts.push(`The customer is on the homepage.`);
+    }
+
+    // Browsing history
+    if (pageContext.browsingHistory && pageContext.browsingHistory.length > 0) {
+      parts.push("\n## BROWSING HISTORY\n");
+      parts.push("Products the customer has viewed during this session (most recent first):\n");
+      for (const entry of pageContext.browsingHistory.slice(0, 10)) {
+        const ago = getTimeAgo(entry.viewedAt);
+        parts.push(`- **${entry.productName}**${entry.productPrice ? " (" + entry.productPrice + ")" : ""}${ago ? " — viewed " + ago : ""}`);
+      }
+      parts.push("\nUse this history to understand what the customer is comparing and what price range they're exploring. Reference products they've viewed when making recommendations.");
+    }
+
+    if (pageContext.dwellSeconds) {
+      parts.push(`\nThe customer has been on this page for about ${pageContext.dwellSeconds} seconds.`);
+    }
+  }
+
+  if (visitorProfile) {
+    parts.push("\n# VISITOR PROFILE\n");
+    parts.push(`- **Visit count:** ${visitorProfile.visitCount}`);
+    parts.push(`- **First visit:** ${visitorProfile.firstVisit}`);
+    if (visitorProfile.viewedProducts.length > 0) {
+      parts.push(`- **Previously viewed:** ${visitorProfile.viewedProducts.join(", ")}`);
+    }
+    if (visitorProfile.purchasedProducts.length > 0) {
+      parts.push(`- **Past purchases:** ${visitorProfile.purchasedProducts.join(", ")}`);
+    }
+    if (Object.keys(visitorProfile.preferences).length > 0) {
+      parts.push(`- **Known preferences:** ${JSON.stringify(visitorProfile.preferences)}`);
+    }
+  }
+
+  return parts.length > 0 ? "\n\n---\n\n" + parts.join("\n") : "";
+}
+
+function getTimeAgo(isoDate: string): string {
+  try {
+    const diff = Date.now() - new Date(isoDate).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  } catch {
+    return "";
+  }
+}
+
 // HTML output rules live in code to avoid triple-backtick conflicts in markdown
 const HTML_INSTRUCTIONS = `
 ## CRITICAL: Interactive HTML Output Rules
@@ -51,13 +162,13 @@ The syntax is: three backticks followed by "html", then your HTML, then three cl
 
 These JavaScript helpers are pre-loaded:
 - sendPrompt(text) — immediately sends text as a user chat message
-- openProduct(url) — opens the Rooms To Go product page (Product Link from catalog) in a new browser tab
+- openProduct(url, productName) — opens the Rooms To Go product page in the same browser tab. ALWAYS pass the product name as the second argument.
 - toggleSelect(element, value) — toggles a pill on/off for multi-select
 - submitSelected(prefix) — sends all toggled values as one message
 
 Pre-loaded CSS classes: .pill, .chip, .card, .card-title, .card-media, .card-image, .card-price, .card-tag, .tag-premium, .tag-value, .tag-cooling, .btn-primary, .btn-secondary, .btn-submit, .grid-2, .flex-wrap
 
-Pre-loaded JavaScript: sendPrompt, toggleSelect, submitSelected, **openProduct(url)** — use openProduct for real product page URLs from the catalog.
+Pre-loaded JavaScript: sendPrompt, toggleSelect, submitSelected, **openProduct(url, productName)** — use openProduct for real product page URLs from the catalog. ALWAYS pass the product name as the second argument for tracking.
 
 ### ABSOLUTE RULE: Product Cards
 
@@ -65,14 +176,14 @@ EVERY TIME you mention, recommend, or discuss a specific mattress product, you M
 
 **Catalog columns you MUST copy exactly for each product (same row):**
 - **Image 1** — full https URL for the hero image (required in every card).
-- **Product Link** — full https URL for the PDP (required for “View product” and image click).
+- **Product Link** — full https URL for the PDP (required for "View product" and image click).
 - Sale Price, Regular Price, Theme, Mattress Type, Mattress Size, etc. — use as shown in CATALOG_DATA.
 
-Product card format (replace placeholders with real values from that product’s catalog row):
+Product card format (replace placeholders with real values from that product's catalog row):
 
 THREE_BACKTICKS_html
 <div class="card">
-<div class="card-media" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE")' title="View on Rooms To Go">
+<div class="card-media" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")' title="View on Rooms To Go">
 <img class="card-image" src="PASTE_IMAGE_1_URL_HERE" alt="PRODUCT NAME" loading="lazy" />
 </div>
 <div class="card-title">PRODUCT NAME</div>
@@ -80,15 +191,15 @@ THREE_BACKTICKS_html
 <p style="margin:6px 0;font-size:13px">One line about why this fits their needs</p>
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-<button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE")'>View product</button>
+<button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>View product</button>
 <button type="button" class="btn-secondary" onclick="sendPrompt('Compare PRODUCT NAME')">Compare</button>
 <button type="button" style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
 </div>
 </div>
 THREE_BACKTICKS
 
-- **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog (opens the real PDP in a new tab). Do not invent URLs.
-- Use the exact **Image 1** URL in the img element’s src attribute (optional second image: add another img using **Image 2** if present).
+- **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog AND the product name as arguments. Do not invent URLs.
+- Use the exact **Image 1** URL in the img element's src attribute (optional second image: add another img using **Image 2** if present).
 - For onclick handlers, use single quotes on the outside and double quotes around the URL inside openProduct(...) so URLs stay intact.
 
 Each product = its own separate card in its own HTML code block.
@@ -180,17 +291,12 @@ export function buildSystemPrompt(
   // Load stage-specific skill
   const skill = loadFile(`skills/${stage}.md`);
 
-  // Build context blocks
-  let contextBlocks = "";
-
-  if (options?.pageContext) {
-    contextBlocks += `\n\n# PAGE CONTEXT\n\n\`\`\`json\n${JSON.stringify(options.pageContext, null, 2)}\n\`\`\``;
-  }
-
-  if (options?.visitorProfile && (stage === "returning" || stage === "greeting")) {
-    contextBlocks += `\n\n# VISITOR PROFILE\n\n\`\`\`json\n${JSON.stringify(options.visitorProfile, null, 2)}\n\`\`\``;
-  }
+  // Build human-readable context (always included when available)
+  const contextNarrative = buildContextNarrative(
+    options?.pageContext,
+    options?.visitorProfile
+  );
 
   // Combine: universal rules + current stage skill + context + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextBlocks}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }
