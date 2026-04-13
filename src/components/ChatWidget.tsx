@@ -12,6 +12,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
+import { RTGLogo } from "./RTGLogo";
 import { WELCOME_MESSAGE } from "@/lib/constants";
 import { saveMessages, loadMessages, clearMessages } from "@/lib/chat-storage";
 import { stripStageTag } from "@/lib/stage-tag";
@@ -382,25 +383,21 @@ export function ChatWidget() {
 
   return (
     <>
+      {/* Toggle button — Shopping Assistant pill */}
       {!isOpen && (
         <button
           onClick={handleOpen}
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2"
-          style={{ backgroundColor: "var(--rtg-red)" }}
-          aria-label="Open chat"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2"
+          style={{ backgroundColor: "var(--rtg-blue)" }}
+          aria-label="Open Shopping Assistant"
         >
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <RTGLogo size={32} />
+          <span
+            className="text-sm font-semibold"
+            style={{ color: "white" }}
           >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
+            Shopping Assistant
+          </span>
         </button>
       )}
 

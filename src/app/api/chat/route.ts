@@ -21,7 +21,7 @@ type ChatRequestBody = {
 
 const MODEL_MAP: Record<string, string> = {
   "gemini-flash-3": "google/gemini-3-flash-preview",
-  "claude-sonnet-4.6": "anthropic/claude-sonnet-4-20250514",
+  "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6",
   "gpt-5.4": "openai/gpt-5.4",
 };
 
