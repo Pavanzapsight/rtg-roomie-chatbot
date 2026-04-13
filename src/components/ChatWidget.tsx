@@ -122,7 +122,16 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
 
-  useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+    // Tell embed.js to resize the iframe
+    if (embed && typeof window !== "undefined" && window.parent !== window) {
+      window.parent.postMessage(
+        { type: isOpen ? "rtg-widget-open" : "rtg-widget-close" },
+        "*"
+      );
+    }
+  }, [isOpen, embed]);
   useEffect(() => { visitorProfileRef.current = visitorProfile; }, [visitorProfile]);
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   useEffect(() => { pageContextRef.current = pageContext; }, [pageContext]);

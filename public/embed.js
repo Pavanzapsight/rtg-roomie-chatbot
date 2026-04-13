@@ -234,7 +234,20 @@
     var iframe = document.createElement("iframe");
     iframe.src = origin + "/embed";
     iframe.title = "Shopping Assistant";
-    iframe.setAttribute("style", [
+    // Start small (just enough for the toggle button), expand when widget opens
+    var CLOSED_STYLE = [
+      "position:fixed",
+      "bottom:0",
+      "right:0",
+      "width:260px",
+      "height:64px",
+      "border:0",
+      "z-index:2147483647",
+      "background:transparent",
+      "transition:width 0.3s ease, height 0.3s ease",
+    ].join(";");
+
+    var OPEN_STYLE = [
       "position:fixed",
       "bottom:0",
       "right:0",
@@ -245,8 +258,10 @@
       "border:0",
       "z-index:2147483647",
       "background:transparent",
-      "pointer-events:none",
-    ].join(";"));
+      "transition:width 0.3s ease, height 0.3s ease",
+    ].join(";");
+
+    iframe.setAttribute("style", CLOSED_STYLE);
     iframe.setAttribute("allow", "clipboard-write");
 
     var ready = false;
@@ -329,6 +344,14 @@
 
         case "rtg-clear-messages":
           safeRemove(STORAGE.CHAT);
+          break;
+
+        case "rtg-widget-open":
+          iframe.setAttribute("style", OPEN_STYLE);
+          break;
+
+        case "rtg-widget-close":
+          iframe.setAttribute("style", CLOSED_STYLE);
           break;
       }
     });
