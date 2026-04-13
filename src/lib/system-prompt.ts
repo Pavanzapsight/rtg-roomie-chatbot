@@ -48,32 +48,47 @@ const HTML_INSTRUCTIONS = `
 You MUST embed interactive HTML in your responses using fenced code blocks.
 The syntax is: three backticks followed by "html", then your HTML, then three closing backticks.
 
-Three JavaScript functions are pre-loaded:
+These JavaScript helpers are pre-loaded:
 - sendPrompt(text) — immediately sends text as a user chat message
+- openProduct(url) — opens the Rooms To Go product page (Product Link from catalog) in a new browser tab
 - toggleSelect(element, value) — toggles a pill on/off for multi-select
 - submitSelected(prefix) — sends all toggled values as one message
 
-Pre-loaded CSS classes: .pill, .chip, .card, .card-title, .card-price, .card-tag, .tag-premium, .tag-value, .tag-cooling, .btn-primary, .btn-secondary, .btn-submit, .grid-2, .flex-wrap
+Pre-loaded CSS classes: .pill, .chip, .card, .card-title, .card-media, .card-image, .card-price, .card-tag, .tag-premium, .tag-value, .tag-cooling, .btn-primary, .btn-secondary, .btn-submit, .grid-2, .flex-wrap
+
+Pre-loaded JavaScript: sendPrompt, toggleSelect, submitSelected, **openProduct(url)** — use openProduct for real product page URLs from the catalog.
 
 ### ABSOLUTE RULE: Product Cards
 
 EVERY TIME you mention, recommend, or discuss a specific mattress product, you MUST render it as an HTML product card. NEVER describe a product in plain text. Non-negotiable.
 
-Product card format (replace bracketed values with real catalog data):
+**Catalog columns you MUST copy exactly for each product (same row):**
+- **Image 1** — full https URL for the hero image (required in every card).
+- **Product Link** — full https URL for the PDP (required for “View product” and image click).
+- Sale Price, Regular Price, Theme, Mattress Type, Mattress Size, etc. — use as shown in CATALOG_DATA.
+
+Product card format (replace placeholders with real values from that product’s catalog row):
 
 THREE_BACKTICKS_html
 <div class="card">
+<div class="card-media" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE")' title="View on Rooms To Go">
+<img class="card-image" src="PASTE_IMAGE_1_URL_HERE" alt="PRODUCT NAME" loading="lazy" />
+</div>
 <div class="card-title">PRODUCT NAME</div>
 <span class="card-tag tag-value">TYPE</span><span class="card-tag tag-cooling">FEATURE</span>
 <p style="margin:6px 0;font-size:13px">One line about why this fits their needs</p>
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-<button class="btn-primary" onclick="sendPrompt('Tell me more about PRODUCT NAME')">Details</button>
-<button class="btn-secondary" onclick="sendPrompt('Compare PRODUCT NAME')">Compare</button>
-<button style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
+<button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE")'>View product</button>
+<button type="button" class="btn-secondary" onclick="sendPrompt('Compare PRODUCT NAME')">Compare</button>
+<button type="button" style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
 </div>
 </div>
 THREE_BACKTICKS
+
+- **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog (opens the real PDP in a new tab). Do not invent URLs.
+- Use the exact **Image 1** URL in the img element’s src attribute (optional second image: add another img using **Image 2** if present).
+- For onclick handlers, use single quotes on the outside and double quotes around the URL inside openProduct(...) so URLs stay intact.
 
 Each product = its own separate card in its own HTML code block.
 

@@ -1,8 +1,8 @@
 "use client";
 
 const MODELS = [
-  { key: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
   { key: "gemini-flash-3", label: "Gemini Flash 3.0" },
+  { key: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
   { key: "gpt-5.4", label: "GPT 5.4" },
 ];
 

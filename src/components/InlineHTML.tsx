@@ -30,6 +30,12 @@ const IFRAME_BRIDGE_SCRIPT = `
     window.parent.postMessage({ type: 'rtg-send-prompt', text: text.trim() }, '*');
   }
 
+  /** Opens the Rooms To Go product page (parent window; works inside sandboxed iframe). */
+  function openProduct(url) {
+    if (!url) return;
+    window.parent.postMessage({ type: 'rtg-open-url', url: String(url).trim() }, '*');
+  }
+
   // Auto-resize iframe to fit content — tight, no blank space
   function notifyHeight() {
     // Use body scrollHeight for tightest fit
@@ -102,6 +108,21 @@ const IFRAME_BASE_STYLES = `
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
   .card-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .card-media {
+    cursor: pointer;
+    margin: -12px -12px 10px -12px;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    background: #F5F5F5;
+  }
+  .card-media:focus-visible { outline: 2px solid #E4002B; outline-offset: 2px; }
+  .card-image {
+    width: 100%;
+    height: 132px;
+    object-fit: cover;
+    display: block;
+    vertical-align: middle;
+  }
   .card-price { font-weight: 700; color: #1A1A1A; font-size: 16px; }
   .card-tag {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
@@ -164,7 +185,7 @@ export function InlineHTML({ html, id }: InlineHTMLProps) {
       if (e.data?.type === "rtg-iframe-resize" && iframeRef.current) {
         if (e.source === iframeRef.current.contentWindow) {
           // Tight fit — add minimal padding
-          setHeight(Math.min(Math.max(e.data.height, 20), 500));
+          setHeight(Math.min(Math.max(e.data.height, 20), 720));
         }
       }
     }

@@ -14,10 +14,14 @@ const QUICK_CHIPS = [
 export function ChatInput({
   onSend,
   disabled,
+  isStreaming,
+  onAbort,
   onChipClick,
 }: {
   onSend: (text: string) => void;
   disabled: boolean;
+  isStreaming: boolean;
+  onAbort: () => void | Promise<void>;
   onChipClick: (text: string) => void;
 }) {
   const [input, setInput] = useState("");
@@ -97,31 +101,52 @@ export function ChatInput({
             target.style.height = Math.min(target.scrollHeight, 100) + "px";
           }}
         />
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || !input.trim()}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40"
-          style={{
-            backgroundColor: disabled || !input.trim()
-              ? "var(--rtg-gray-200)"
-              : "var(--rtg-red)",
-          }}
-          aria-label="Send message"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={onAbort}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors"
+            style={{ backgroundColor: "var(--rtg-red)" }}
+            aria-label="Stop generating"
           >
-            <path d="M22 2L11 13" />
-            <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-          </svg>
-        </button>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="white"
+              aria-hidden
+            >
+              <rect x="5" y="5" width="14" height="14" rx="1.5" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={disabled || !input.trim()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40"
+            style={{
+              backgroundColor: disabled || !input.trim()
+                ? "var(--rtg-gray-200)"
+                : "var(--rtg-red)",
+            }}
+            aria-label="Send message"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M22 2L11 13" />
+              <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
