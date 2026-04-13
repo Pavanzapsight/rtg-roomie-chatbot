@@ -1,13 +1,23 @@
 "use client";
 
+const MODELS = [
+  { key: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
+  { key: "gemini-flash-3", label: "Gemini Flash 3.0" },
+  { key: "gpt-5.4", label: "GPT 5.4" },
+];
+
 export function ChatHeader({
   onMinimize,
   onClose,
   onRefresh,
+  selectedModel,
+  onModelChange,
 }: {
   onMinimize: () => void;
   onClose: () => void;
   onRefresh: () => void;
+  selectedModel: string;
+  onModelChange: (model: string) => void;
 }) {
   return (
     <div
@@ -32,7 +42,31 @@ export function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1">
-        {/* Refresh / New conversation */}
+        {/* Model selector */}
+        <select
+          value={selectedModel}
+          onChange={(e) => onModelChange(e.target.value)}
+          className="h-7 rounded-md border-0 px-1 text-[10px] font-medium"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.2)",
+            color: "white",
+            outline: "none",
+            maxWidth: 120,
+          }}
+          aria-label="Select AI model"
+        >
+          {MODELS.map((m) => (
+            <option
+              key={m.key}
+              value={m.key}
+              style={{ color: "#1A1A1A", backgroundColor: "white" }}
+            >
+              {m.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Refresh */}
         <button
           onClick={onRefresh}
           className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/20"

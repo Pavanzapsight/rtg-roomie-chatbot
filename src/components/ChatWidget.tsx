@@ -142,6 +142,7 @@ export function ChatWidget() {
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(
     null
   );
+  const [selectedModel, setSelectedModel] = useState("claude-sonnet-4.6");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -260,7 +261,7 @@ export function ChatWidget() {
 
       try {
         await streamResponse(
-          { messages: [], type: "proactive", pageContext },
+          { messages: [], type: "proactive", pageContext, model: selectedModel },
           assistantId,
           setMessages,
           controller.signal
@@ -299,7 +300,7 @@ export function ChatWidget() {
       setMessages([]);
 
       await streamResponse(
-        { messages: [], type: "returning", visitorProfile: profile },
+        { messages: [], type: "returning", visitorProfile: profile, model: selectedModel },
         assistantId,
         setMessages,
         controller.signal
@@ -350,6 +351,7 @@ export function ChatWidget() {
               text: m.text,
             })),
             visitorProfile: visitorProfile || undefined,
+            model: selectedModel,
           },
           assistantId,
           setMessages,
@@ -371,7 +373,7 @@ export function ChatWidget() {
         abortRef.current = null;
       }
     },
-    [messages, isStreaming, visitorProfile]
+    [messages, isStreaming, visitorProfile, selectedModel]
   );
 
   useEffect(() => {
@@ -424,6 +426,8 @@ export function ChatWidget() {
             onMinimize={() => setIsOpen(false)}
             onClose={handleClose}
             onRefresh={handleRefresh}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
           />
 
           <ChatMessages
