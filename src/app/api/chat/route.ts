@@ -23,9 +23,9 @@ interface ChatRequest {
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const MODEL_MAP: Record<string, string> = {
-  "gemini-flash-3": "google/gemini-2.5-flash",
-  "claude-sonnet-4.6": "anthropic/claude-sonnet-4-20250514",
-  "gpt-5.4": "openai/gpt-4.1",
+  "gemini-flash-3": "google/gemini-3-flash-preview",
+  "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6",
+  "gpt-5.4": "openai/gpt-5.4",
 };
 
 const DEFAULT_MODEL = "claude-sonnet-4.6";
