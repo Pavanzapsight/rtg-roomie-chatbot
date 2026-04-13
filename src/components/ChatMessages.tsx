@@ -12,7 +12,10 @@ function TypingIndicator() {
     <div className="flex items-center gap-1 px-4 py-3">
       <div
         className="flex items-center gap-1 rounded-2xl rounded-bl-sm px-4 py-3"
-        style={{ backgroundColor: "white", border: "1px solid var(--rtg-gray-200)" }}
+        style={{
+          backgroundColor: "white",
+          border: "1px solid var(--rtg-gray-200)",
+        }}
       >
         <div className="typing-dot h-2 w-2 rounded-full" />
         <div className="typing-dot h-2 w-2 rounded-full" />
@@ -94,18 +97,14 @@ function MessageBubble({
       )}
       <div
         className={`max-w-[88%] px-4 py-2.5 text-[15px] leading-relaxed ${
-          isUser
-            ? "rounded-2xl rounded-br-sm"
-            : "rounded-xl chat-content"
+          isUser ? "rounded-2xl rounded-br-sm" : "rounded-xl chat-content"
         }`}
         style={{
           backgroundColor: "white",
           color: "var(--rtg-charcoal)",
           border: isUser ? "none" : "1px solid var(--rtg-gray-200)",
           boxShadow: isUser ? "none" : "0 1px 3px rgba(0,0,0,0.06)",
-          ...(isUser
-            ? { backgroundColor: "var(--rtg-blue-light)" }
-            : {}),
+          ...(isUser ? { backgroundColor: "var(--rtg-blue-light)" } : {}),
         }}
       >
         {isUser ? (

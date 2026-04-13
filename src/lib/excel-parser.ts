@@ -6,10 +6,32 @@ export interface ParsedCatalog {
   rawText: string;
 }
 
-export function parseExcelBuffer(buffer: ArrayBuffer): ParsedCatalog {
+export type ParseExcelOptions = {
+  /** If omitted, the first sheet in the workbook is used. */
+  sheetName?: string;
+};
+
+export function parseExcelBuffer(
+  buffer: ArrayBuffer,
+  options?: ParseExcelOptions
+): ParsedCatalog {
   const workbook = XLSX.read(buffer, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
+  const requested = options?.sheetName?.trim();
+  let sheetName: string;
+  if (requested) {
+    if (!workbook.SheetNames.includes(requested)) {
+      throw new Error(
+        `Excel workbook has no sheet named "${requested}". Found: ${workbook.SheetNames.join(", ")}`
+      );
+    }
+    sheetName = requested;
+  } else {
+    sheetName = workbook.SheetNames[0];
+  }
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    throw new Error(`Missing sheet "${sheetName}" in workbook`);
+  }
 
   const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
     defval: "",

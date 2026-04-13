@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useChat } from "@ai-sdk/react";
+import {
+  DefaultChatTransport,
+  generateId,
+  readUIMessageStream,
+  type UIMessage,
+  type UIMessageChunk,
+} from "ai";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { RTGLogo } from "./RTGLogo";
 import { WELCOME_MESSAGE } from "@/lib/constants";
 import { saveMessages, loadMessages, clearMessages } from "@/lib/chat-storage";
+import { stripStageTag } from "@/lib/stage-tag";
 import {
   type VisitorProfile,
   recordVisit,
@@ -32,14 +41,36 @@ export interface PageContext {
   purchasedProducts?: string[];
 }
 
-let messageCounter = 0;
-function genId() {
-  return `msg-${++messageCounter}-${Date.now()}`;
+const CHAT_ID = "rtg-roomie-chat";
+
+const welcomeUi: UIMessage = {
+  id: "welcome",
+  role: "assistant",
+  parts: [{ type: "text", text: WELCOME_MESSAGE }],
+};
+
+function getTextFromUIMessage(m: UIMessage): string {
+  return m.parts
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
 }
 
-const defaultMessages: ChatMessage[] = [
-  { id: "welcome", role: "assistant", text: WELCOME_MESSAGE },
-];
+function uiMessageToChatMessage(m: UIMessage): ChatMessage {
+  return {
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    text: stripStageTag(getTextFromUIMessage(m)),
+  };
+}
+
+function chatMessageToUi(m: ChatMessage): UIMessage {
+  return {
+    id: m.id,
+    role: m.role,
+    parts: [{ type: "text", text: m.text }],
+  };
+}
 
 // Read page context from host page
 function getPageContext(): PageContext | null {
@@ -65,94 +96,76 @@ function getDwellThreshold(): number {
   return (window as any).RTG_CHAT_CONTEXT?.dwellThreshold || 60000; // default 1 minute
 }
 
-// Stream a response from the API
-async function streamResponse(
-  body: Record<string, unknown>,
-  assistantId: string,
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  signal: AbortSignal
-): Promise<string> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok || !res.body) throw new Error("Chat request failed");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let fullText = "";
-  let assistantAdded = false;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6);
-      if (payload === "[DONE]") continue;
-
-      try {
-        const data = JSON.parse(payload);
-        if (data.error) {
-          fullText = `Sorry, something went wrong: ${data.error}`;
-        } else if (data.done && data.text) {
-          fullText = data.text;
-        } else if (data.delta && data.text) {
-          fullText = data.text;
-        } else if (data.text) {
-          fullText = data.text;
-        }
-
-        if (!assistantAdded) {
-          assistantAdded = true;
-          setMessages((prev) => [
-            ...prev,
-            { id: assistantId, role: "assistant", text: fullText },
-          ]);
-        } else {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId ? { ...m, text: fullText } : m
-            )
-          );
-        }
-      } catch {
-        // Skip
-      }
-    }
-  }
-
-  return fullText;
-}
-
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(defaultMessages);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(
     null
   );
-  const [selectedModel, setSelectedModel] = useState("claude-sonnet-4.6");
+  const [selectedModel, setSelectedModel] = useState("gemini-flash-3");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const handleSendRef = useRef<(text: string) => void>(undefined);
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visitorProfileRef = useRef(visitorProfile);
+  const selectedModelRef = useRef(selectedModel);
+  const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
 
-  // Listen for sendPrompt messages from inline HTML iframes
+  useEffect(() => {
+    visitorProfileRef.current = visitorProfile;
+  }, [visitorProfile]);
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        prepareSendMessagesRequest: ({ id, messages, body }) => {
+          const extras = requestExtrasRef.current;
+          requestExtrasRef.current = null;
+          return {
+            body: {
+              id,
+              messages,
+              ...(body ?? {}),
+              visitorProfile: visitorProfileRef.current ?? undefined,
+              model: selectedModelRef.current,
+              ...extras,
+            },
+          };
+        },
+      }),
+    []
+  );
+
+  const { messages, sendMessage, setMessages, status, stop } = useChat({
+    id: CHAT_ID,
+    transport,
+    messages: [welcomeUi],
+  });
+
+  const isStreaming = status === "streaming" || status === "submitted";
+
+  const displayMessages: ChatMessage[] = messages.map(uiMessageToChatMessage);
+
+  // Listen for sendPrompt + open URL from inline HTML iframes (sandbox cannot navigate top window)
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
+      if (e.data?.type === "rtg-open-url" && typeof e.data.url === "string") {
+        const raw = e.data.url.trim();
+        try {
+          const parsed = new URL(raw);
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            window.open(parsed.href, "_blank", "noopener,noreferrer");
+          }
+        } catch {
+          /* ignore invalid URLs */
+        }
+        return;
+      }
       if (e.data?.type === "rtg-send-prompt" && e.data.text) {
         if (
           e.data.text === "__dismiss__" ||
@@ -180,7 +193,6 @@ export function ChatWidget() {
           ...(window as any).RTG_CHAT_CONTEXT,
           ...e.data.context,
         };
-        // Update visitor profile with new page context
         const ctx = getPageContext();
         if (ctx) {
           const updated = recordVisit({
@@ -200,10 +212,9 @@ export function ChatWidget() {
   useEffect(() => {
     const saved = loadMessages();
     if (saved && saved.length > 0) {
-      setMessages(saved);
+      setMessages(saved.map(chatMessageToUi));
     }
 
-    // Record this visit and load visitor profile
     const ctx = getPageContext();
     const profile = recordVisit({
       productName: ctx?.productName,
@@ -213,28 +224,54 @@ export function ChatWidget() {
     setVisitorProfile(profile);
 
     setLoaded(true);
-  }, []);
+  }, [setMessages]);
 
   // Save messages whenever they change
   useEffect(() => {
     if (loaded) {
-      saveMessages(messages);
+      saveMessages(displayMessages);
     }
-  }, [messages, loaded]);
+  }, [displayMessages, loaded]);
 
   // Update visitor profile with preferences when messages change
   useEffect(() => {
-    if (loaded && messages.length > 1) {
+    if (loaded && displayMessages.length > 1) {
       updateProfileFromChat(
-        messages.map((m) => ({ role: m.role, text: m.text })),
-        "" // stage will be updated by the API response
+        displayMessages.map((m) => ({ role: m.role, text: m.text })),
+        ""
       );
     }
-  }, [messages, loaded]);
+  }, [displayMessages, loaded]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
+    const assistantId = generateId();
+    try {
+      for await (const uiMessage of readUIMessageStream({ stream })) {
+        setMessages((prev) => [
+          ...prev.filter((m) => m.id !== assistantId),
+          { ...uiMessage, id: assistantId },
+        ]);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== assistantId),
+        {
+          id: assistantId,
+          role: "assistant",
+          parts: [
+            {
+              type: "text",
+              text: "Sorry, I ran into an issue connecting. Please try again.",
+            },
+          ],
+        },
+      ]);
+    }
+  }
 
   // Proactive auto-open: dwell timer
   useEffect(() => {
@@ -255,67 +292,66 @@ export function ChatWidget() {
 
       setHasAutoOpened(true);
       setIsOpen(true);
-      setIsStreaming(true);
 
-      const assistantId = genId();
       const controller = new AbortController();
-
+      const pageCtx = pageContext;
       try {
-        await streamResponse(
-          { messages: [], type: "proactive", pageContext, model: selectedModel },
-          assistantId,
-          setMessages,
-          controller.signal
-        );
+        requestExtrasRef.current = {
+          type: "proactive",
+          pageContext: pageCtx,
+        };
+        const chunkStream = await transport.sendMessages({
+          trigger: "submit-message",
+          chatId: CHAT_ID,
+          messageId: undefined,
+          messages: [],
+          abortSignal: controller.signal,
+        });
+        await consumeAssistantStream(chunkStream);
       } catch {
-        setMessages(defaultMessages);
-      } finally {
-        setIsStreaming(false);
+        setMessages([welcomeUi]);
       }
     }, threshold);
 
     return () => {
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
     };
-  }, [isOpen, hasAutoOpened, loaded]);
+  }, [isOpen, hasAutoOpened, loaded, transport, setMessages]);
 
   // Generate personalized greeting for returning visitors when widget opens
   const generateReturningGreeting = useCallback(async () => {
     const profile = loadVisitorProfile();
     if (profile.visitCount <= 1 && profile.viewedProducts.length === 0) {
-      return; // First visit, no history — use default welcome
+      return;
     }
 
-    // Check if there's already a conversation (not just the default welcome)
     const saved = loadMessages();
     if (saved && saved.length > 1) {
-      return; // Active conversation exists — don't replace it
+      return;
     }
 
-    setIsStreaming(true);
-    const assistantId = genId();
-    const controller = new AbortController();
+    setMessages([]);
 
     try {
-      // Clear default welcome
-      setMessages([]);
-
-      await streamResponse(
-        { messages: [], type: "returning", visitorProfile: profile, model: selectedModel },
-        assistantId,
-        setMessages,
-        controller.signal
-      );
+      requestExtrasRef.current = {
+        type: "returning",
+        visitorProfile: profile,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: [],
+        abortSignal: undefined,
+      });
+      await consumeAssistantStream(chunkStream);
     } catch {
-      setMessages(defaultMessages);
-    } finally {
-      setIsStreaming(false);
+      setMessages([welcomeUi]);
     }
-  }, []);
+  }, [transport, setMessages]);
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
-    // Check if this is a returning visitor who should get a personalized greeting
     if (visitorProfile && visitorProfile.visitCount > 1 && messages.length <= 1) {
       generateReturningGreeting();
     }
@@ -323,58 +359,15 @@ export function ChatWidget() {
 
   const handleRefresh = useCallback(() => {
     clearMessages();
-    setMessages(defaultMessages);
-  }, []);
+    setMessages([welcomeUi]);
+  }, [setMessages]);
 
   const handleSend = useCallback(
     async (text: string) => {
       if (!text.trim() || isStreaming) return;
-
-      const userMsg: ChatMessage = {
-        id: genId(),
-        role: "user",
-        text: text.trim(),
-      };
-      const allMessages = [...messages, userMsg];
-      setMessages(allMessages);
-      setIsStreaming(true);
-
-      const assistantId = genId();
-
-      try {
-        abortRef.current = new AbortController();
-
-        await streamResponse(
-          {
-            messages: allMessages.map((m) => ({
-              id: m.id,
-              role: m.role,
-              text: m.text,
-            })),
-            visitorProfile: visitorProfile || undefined,
-            model: selectedModel,
-          },
-          assistantId,
-          setMessages,
-          abortRef.current.signal
-        );
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: assistantId,
-              role: "assistant",
-              text: "Sorry, I ran into an issue connecting. Please try again.",
-            },
-          ]);
-        }
-      } finally {
-        setIsStreaming(false);
-        abortRef.current = null;
-      }
+      await sendMessage({ text: text.trim() });
     },
-    [messages, isStreaming, visitorProfile, selectedModel]
+    [sendMessage, isStreaming]
   );
 
   useEffect(() => {
@@ -384,7 +377,7 @@ export function ChatWidget() {
   const handleClose = useCallback(() => {
     setIsOpen(false);
     if (hasAutoOpened && typeof document !== "undefined") {
-      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300"; // 5 min cooldown
+      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300";
     }
   }, [hasAutoOpened]);
 
@@ -408,7 +401,6 @@ export function ChatWidget() {
         </button>
       )}
 
-      {/* Chat window */}
       {isOpen && (
         <div
           className="widget-enter fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl shadow-2xl"
@@ -427,7 +419,7 @@ export function ChatWidget() {
           />
 
           <ChatMessages
-            messages={messages}
+            messages={displayMessages}
             isStreaming={isStreaming}
             messagesEndRef={messagesEndRef}
           />
@@ -435,6 +427,8 @@ export function ChatWidget() {
           <ChatInput
             onSend={handleSend}
             disabled={isStreaming}
+            isStreaming={isStreaming}
+            onAbort={stop}
             onChipClick={handleSend}
           />
         </div>
