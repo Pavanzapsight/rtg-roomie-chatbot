@@ -5,6 +5,7 @@ import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { type ChatMessage } from "./ChatWidget";
 import { InlineHTML } from "./InlineHTML";
+import { RTGLogo } from "./RTGLogo";
 
 function TypingIndicator() {
   return (
@@ -71,10 +72,26 @@ function MessageBubble({
 }) {
   const isUser = message.role === "user";
 
+  // Check if this is the first message in a consecutive run from the assistant
+  // (show avatar only on the first bubble in a group)
+  const showAvatar = !isUser;
+
   return (
     <div
-      className={`chat-bubble-enter flex ${isUser ? "justify-end" : "justify-start"} px-4 py-1`}
+      className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1`}
     >
+      {/* Assistant avatar + label */}
+      {showAvatar && (
+        <div className="mb-1 flex items-center gap-1.5 pl-1">
+          <RTGLogo size={18} />
+          <span
+            className="text-[11px] font-semibold"
+            style={{ color: "var(--rtg-gray-700)" }}
+          >
+            Shopping Assistant
+          </span>
+        </div>
+      )}
       <div
         className={`max-w-[85%] px-4 py-2.5 text-[15px] leading-relaxed ${
           isUser
