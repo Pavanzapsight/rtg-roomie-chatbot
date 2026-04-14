@@ -213,33 +213,70 @@
     return safeJSON(safeGet(STORAGE.PROFILE)) || null;
   }
 
-  // ─── Shared Chat (via ?c= URL param → fetches from /api/share/:id) ───
-  function getSharedChatId() {
+  // ─── Shared Chat ─────────────────────────────────────────────────────
+  // Two formats supported:
+  //   ?chat=<gzip+base64url>  — self-contained (works across browsers)
+  //   ?c=<short-id>           — server-side lookup (in-memory, best effort)
+  function getSharedChatInput() {
     var params = new URLSearchParams(window.location.search);
-    var id = params.get("c") || params.get("chat"); // back-compat with old links
-    if (!id) return null;
-    // Remove the param from the URL without reloading
+    var chatData = params.get("chat");
+    var shortId = params.get("c");
+    if (!chatData && !shortId) return null;
+
     var clean = new URL(window.location.href);
-    clean.searchParams.delete("c");
     clean.searchParams.delete("chat");
+    clean.searchParams.delete("c");
     history.replaceState(null, "", clean.toString());
-    return id;
+
+    return { chatData: chatData, shortId: shortId };
   }
 
-  function fetchSharedChat(origin, id, callback) {
-    fetch(origin + "/api/share/" + encodeURIComponent(id))
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (data && Array.isArray(data.messages)) {
-          // Add ids so UI can render them
-          callback(data.messages.map(function (m, i) {
-            return { id: "shared-" + i, role: m.role, text: m.text };
-          }));
-        } else {
-          callback(null);
-        }
-      })
-      .catch(function () { callback(null); });
+  // Gzip-decompress a URL-safe base64 string → JSON string
+  function decompressChat(encoded) {
+    var b64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    var stream = new Blob([bytes]).stream().pipeThrough(
+      new DecompressionStream("gzip")
+    );
+    return new Response(stream).text();
+  }
+
+  function resolveSharedChat(origin, input, callback) {
+    // Try the self-contained compressed data first
+    if (input.chatData) {
+      decompressChat(input.chatData)
+        .then(function (json) {
+          var arr = JSON.parse(json);
+          if (Array.isArray(arr)) {
+            callback(arr.map(function (m, i) {
+              return { id: "shared-" + i, role: m.role, text: m.text };
+            }));
+          } else { callback(null); }
+        })
+        .catch(function () { callback(null); });
+      return;
+    }
+
+    // Fallback: short-id server lookup
+    if (input.shortId) {
+      fetch(origin + "/api/share/" + encodeURIComponent(input.shortId))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (data && Array.isArray(data.messages)) {
+            callback(data.messages.map(function (m, i) {
+              return { id: "shared-" + i, role: m.role, text: m.text };
+            }));
+          } else { callback(null); }
+        })
+        .catch(function () { callback(null); });
+      return;
+    }
+
+    callback(null);
   }
 
   // ─── Main Inject ──────────────────────────────────────────────────────
@@ -304,7 +341,7 @@
     function handleReady() {
       ready = true;
 
-      var sharedChatId = getSharedChatId();
+      var sharedInput = getSharedChatInput();
       var localChat = safeJSON(safeGet(STORAGE.CHAT));
       var pending = safeJSON(safeGet(STORAGE.PENDING));
       var profile = getVisitorProfile();
@@ -323,13 +360,12 @@
         });
       }
 
-      if (sharedChatId) {
-        // Fetch shared chat from the API, then init (iframe stays ready until we send)
-        fetchSharedChat(origin, sharedChatId, function (sharedMessages) {
+      if (sharedInput) {
+        resolveSharedChat(origin, sharedInput, function (sharedMessages) {
           if (sharedMessages && sharedMessages.length > 0) {
             sendInit(sharedMessages, true);
           } else {
-            // Share not found or expired — fall back to local chat
+            // Decode failed or expired — fall back to local chat
             sendInit(localChat, false);
           }
         });

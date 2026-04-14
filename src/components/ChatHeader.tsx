@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RTGTextLogo } from "./RTGTextLogo";
+import { RTGLogo } from "./RTGLogo";
 
 export function ChatHeader({
   onMinimize,
@@ -27,7 +27,15 @@ export function ChatHeader({
       className="flex h-14 shrink-0 items-center justify-between px-4"
       style={{ backgroundColor: "var(--rtg-blue)" }}
     >
-      <RTGTextLogo color="white" height={20} />
+      <div className="flex items-center gap-2.5">
+        <RTGLogo size={32} />
+        <span
+          className="text-sm font-semibold"
+          style={{ color: "white" }}
+        >
+          Shopping Assistant
+        </span>
+      </div>
 
       <div className="flex items-center gap-1">
         <button

@@ -516,21 +516,30 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     if (shareableMessages.length === 0) return;
 
     try {
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: shareableMessages.map((m) => ({ role: m.role, text: m.text })),
-        }),
-      });
-      if (!res.ok) throw new Error("share failed");
-      const { id } = await res.json();
-      const url = `https://rtg-275.myshopify.com/?c=${id}`;
+      const json = JSON.stringify(
+        shareableMessages.map((m) => ({ role: m.role, text: m.text }))
+      );
+
+      // Gzip-compress and URL-safe base64 encode so the link is
+      // self-contained (works across browsers/devices) but much shorter
+      // than raw base64.
+      const stream = new Blob([json]).stream().pipeThrough(
+        new CompressionStream("gzip")
+      );
+      const buffer = await new Response(stream).arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const encoded = btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
 
       try {
         await navigator.clipboard.writeText(url);
       } catch {
-        // Clipboard blocked — fallback to execCommand
         const el = document.createElement("textarea");
         el.value = url;
         el.style.position = "fixed";
