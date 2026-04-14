@@ -290,14 +290,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         // for the initial navigation. Schedule contextual here too.
         const initialCtx = data.pageContext as PageContext | undefined;
         const chatWillBeOpen = data.widgetOpen || data.isSharedChat;
-        console.log("[RTG] rtg-init", {
-          chatWillBeOpen,
-          widgetOpen: data.widgetOpen,
-          isSharedChat: data.isSharedChat,
-          pendingProduct: !!data.pendingProduct,
-          page: initialCtx?.page,
-          productName: initialCtx?.productName,
-        });
         if (chatWillBeOpen && !data.pendingProduct && initialCtx) {
           // Small delay so refs are settled and setIsOpen has flushed
           setTimeout(() => scheduleContextualForPdpRef.current?.(initialCtx), 300);
@@ -543,22 +535,13 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
     const assistantId = generateId();
-    let chunkCount = 0;
     try {
       for await (const uiMessage of readUIMessageStream({ stream })) {
-        chunkCount++;
-        const textPreview = uiMessage.parts
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => p.text)
-          .join("")
-          .slice(0, 80);
-        console.log(`[RTG] chunk #${chunkCount}:`, textPreview);
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== assistantId),
           { ...uiMessage, id: assistantId },
         ]);
       }
-      console.log(`[RTG] consumeAssistantStream finished, total chunks: ${chunkCount}`);
     } catch {
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== assistantId),
@@ -612,7 +595,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const gatedFire = useCallback(
     (which: ProactiveReason): boolean => {
       const result = proactive.canFire(which, pageContextRef.current);
-      console.log("[RTG] gatedFire", which, result);
       if (!result.allowed) return false;
       proactive.markFired();
       return true;
@@ -624,43 +606,19 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // Called from the rtg-init handler (full page load), the page-context-update
   // handler (SPA nav), and handleOpen (user opens chat while on a PDP).
   const scheduleContextualForPdp = useCallback((ctx: PageContext) => {
-    console.log("[RTG] scheduleContextualForPdp called", {
-      page: ctx.page,
-      productName: ctx.productName,
-      lastProduct: lastContextualProductRef.current,
-      isOpen: isOpenRef.current,
-    });
-    if (ctx.page !== "pdp" || !ctx.productName) {
-      console.log("[RTG] State 2 skipped: not a PDP or no product name");
-      return;
-    }
-    if (ctx.productName === lastContextualProductRef.current) {
-      console.log("[RTG] State 2 skipped: same product as last commented");
-      return;
-    }
+    if (ctx.page !== "pdp" || !ctx.productName) return;
+    if (ctx.productName === lastContextualProductRef.current) return;
     if (contextualDwellTimerRef.current) {
       clearTimeout(contextualDwellTimerRef.current);
       contextualDwellTimerRef.current = null;
     }
     const productAtNavigation = ctx.productName;
-    console.log("[RTG] Starting 5s dwell timer for", productAtNavigation);
     contextualDwellTimerRef.current = setTimeout(() => {
       contextualDwellTimerRef.current = null;
-      console.log("[RTG] Dwell timer fired, checking conditions");
-      if (!isOpenRef.current) {
-        console.log("[RTG] State 2 skipped: chat closed");
-        return;
-      }
+      if (!isOpenRef.current) return;
       const currentCtx = pageContextRef.current;
-      if (!currentCtx || currentCtx.productName !== productAtNavigation) {
-        console.log("[RTG] State 2 skipped: user navigated away");
-        return;
-      }
-      if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) {
-        console.log("[RTG] State 2 skipped: within contextual cooldown");
-        return;
-      }
-      console.log("[RTG] State 2 firing triggerContextual");
+      if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
+      if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
       lastContextualProductRef.current = productAtNavigation;
       lastContextualAtRef.current = Date.now();
       triggerContextualRef.current?.();
@@ -669,11 +627,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   // State 2: Fire contextual product commentary. Routed through the guard.
   const triggerContextual = useCallback(async () => {
-    if (!gatedFire("contextual")) {
-      console.log("[RTG] triggerContextual: blocked by guard");
-      return;
-    }
-    console.log("[RTG] triggerContextual: firing API call");
+    if (!gatedFire("contextual")) return;
     try {
       requestExtrasRef.current = {
         type: "contextual",
@@ -686,11 +640,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         messages: messages,
         abortSignal: new AbortController().signal,
       });
-      console.log("[RTG] triggerContextual: stream started");
       await consumeAssistantStream(chunkStream);
-      console.log("[RTG] triggerContextual: stream ended");
-    } catch (err) {
-      console.log("[RTG] triggerContextual: error", err);
+    } catch {
+      /* swallow — contextual is best-effort */
     }
   }, [transport, messages, gatedFire]);
 
