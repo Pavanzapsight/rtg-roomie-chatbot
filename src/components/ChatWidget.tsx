@@ -141,6 +141,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const triggerReengagementRef = useRef<() => void>(undefined);
   const triggerInterjectionRef = useRef<(type: string) => void>(undefined);
   const triggerNewSessionGreetingRef = useRef<() => void>(undefined);
+  const scheduleContextualForPdpRef = useRef<(ctx: PageContext) => void>(undefined);
 
   const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
   const CONTEXTUAL_COOLDOWN_MS = 30 * 1000;       // 30 seconds between messages
@@ -284,35 +285,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           }
         }
 
-        // State 2 on full page load: if chat is open and the customer
-        // landed directly on a PDP (not via pendingProduct or shared chat),
-        // schedule the contextual commentary after the dwell window.
-        // Most Shopify themes do full page loads, so RTG_PAGE_CONTEXT_MESSAGE
-        // won't fire for the initial navigation — we need this branch too.
-        const initialCtx = data.pageContext;
+        // State 2 on full page load: Shopify themes typically do full page
+        // loads for product clicks, so RTG_PAGE_CONTEXT_MESSAGE won't fire
+        // for the initial navigation. Schedule contextual here too.
+        const initialCtx = data.pageContext as PageContext | undefined;
         const chatWillBeOpen = data.widgetOpen || data.isSharedChat;
-        if (
-          chatWillBeOpen &&
-          !data.pendingProduct &&
-          initialCtx &&
-          initialCtx.page === "pdp" &&
-          initialCtx.productName &&
-          initialCtx.productName !== lastContextualProductRef.current
-        ) {
-          if (contextualDwellTimerRef.current) {
-            clearTimeout(contextualDwellTimerRef.current);
-          }
-          const productAtNavigation = initialCtx.productName;
-          contextualDwellTimerRef.current = setTimeout(() => {
-            contextualDwellTimerRef.current = null;
-            if (!isOpenRef.current) return;
-            const currentCtx = pageContextRef.current;
-            if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
-            if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
-            lastContextualProductRef.current = productAtNavigation;
-            lastContextualAtRef.current = Date.now();
-            triggerContextualRef.current?.();
-          }, CONTEXTUAL_DWELL_MS);
+        if (chatWillBeOpen && !data.pendingProduct && initialCtx) {
+          // Small delay so refs are settled and setIsOpen has flushed
+          setTimeout(() => scheduleContextualForPdpRef.current?.(initialCtx), 300);
         }
 
         setLoaded(true);
@@ -345,42 +325,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setVisitorProfile(updated);
         }
 
-        // State 2: BROWSING_CHAT_OPEN — contextual product commentary.
-        // Guards:
-        //  - Chat must be open (user invited us)
-        //  - Page must be a PDP with a productName
-        //  - Different product than last commented on
-        //  - Cooldown: 30s since last contextual message
-        //  - Dwell: 5s on the page before firing
-        //  - Skip if streaming a response or user is composing (has input text)
-        if (
-          ctx.page === "pdp" &&
-          ctx.productName &&
-          ctx.productName !== lastContextualProductRef.current
-        ) {
-          // Cancel any pending dwell timer from a previous navigation
-          if (contextualDwellTimerRef.current) {
-            clearTimeout(contextualDwellTimerRef.current);
-            contextualDwellTimerRef.current = null;
-          }
-
-          const productAtNavigation = ctx.productName;
-          contextualDwellTimerRef.current = setTimeout(() => {
-            contextualDwellTimerRef.current = null;
-
-            // Re-check all conditions after the dwell — user may have left
-            if (!isOpenRef.current) return;
-            const currentCtx = pageContextRef.current;
-            if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
-            if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
-
-            // Fire the contextual API call (does not inject a user-facing
-            // prompt; uses its own skill via requestExtrasRef)
-            lastContextualProductRef.current = productAtNavigation;
-            lastContextualAtRef.current = Date.now();
-            triggerContextualRef.current?.();
-          }, CONTEXTUAL_DWELL_MS);
-        }
+        // State 2: BROWSING_CHAT_OPEN — contextual product commentary
+        scheduleContextualForPdpRef.current?.(ctx);
         return;
       }
 
@@ -656,6 +602,30 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     [proactive]
   );
 
+  // Reusable: schedule a State 2 contextual commentary after the dwell gate.
+  // Called from the rtg-init handler (full page load), the page-context-update
+  // handler (SPA nav), and handleOpen (user opens chat while on a PDP).
+  const scheduleContextualForPdp = useCallback((ctx: PageContext) => {
+    if (ctx.page !== "pdp" || !ctx.productName) return;
+    if (ctx.productName === lastContextualProductRef.current) return;
+    if (contextualDwellTimerRef.current) {
+      clearTimeout(contextualDwellTimerRef.current);
+      contextualDwellTimerRef.current = null;
+    }
+    const productAtNavigation = ctx.productName;
+    contextualDwellTimerRef.current = setTimeout(() => {
+      contextualDwellTimerRef.current = null;
+      // Re-check after dwell
+      if (!isOpenRef.current) return;
+      const currentCtx = pageContextRef.current;
+      if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
+      if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
+      lastContextualProductRef.current = productAtNavigation;
+      lastContextualAtRef.current = Date.now();
+      triggerContextualRef.current?.();
+    }, CONTEXTUAL_DWELL_MS);
+  }, [CONTEXTUAL_COOLDOWN_MS, CONTEXTUAL_DWELL_MS]);
+
   // State 2: Fire contextual product commentary. Routed through the guard.
   const triggerContextual = useCallback(async () => {
     if (!gatedFire("contextual")) return;
@@ -754,6 +724,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   useEffect(() => { triggerReengagementRef.current = triggerReengagement; }, [triggerReengagement]);
   useEffect(() => { triggerInterjectionRef.current = triggerInterjection; }, [triggerInterjection]);
   useEffect(() => { triggerNewSessionGreetingRef.current = triggerNewSessionGreeting; }, [triggerNewSessionGreeting]);
+  useEffect(() => { scheduleContextualForPdpRef.current = scheduleContextualForPdp; }, [scheduleContextualForPdp]);
 
   // Periodic check: if 20 minutes pass with no activity pulse, mark IDLE.
   // The actual re-engagement fires on the NEXT activity pulse (in the
@@ -776,6 +747,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     setIsOpen(true);
     if (visitorProfile && visitorProfile.visitCount > 1 && messages.length <= 1) {
       generateReturningGreeting();
+    }
+    // If user is on a PDP and opens the chat, fire State 2 after dwell
+    const ctx = pageContextRef.current;
+    if (ctx && ctx.page === "pdp" && ctx.productName) {
+      setTimeout(() => scheduleContextualForPdpRef.current?.(ctx), 300);
     }
   }, [visitorProfile, messages.length, generateReturningGreeting]);
 

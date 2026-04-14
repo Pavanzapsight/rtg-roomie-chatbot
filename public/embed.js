@@ -129,6 +129,13 @@
       if (handleMatch) {
         ctx.productHandle = handleMatch[1];
         ctx.productUrl = window.location.href;
+        // Final fallback: derive a readable product name from the URL handle
+        // (e.g. "beautyrest-harmony-lux" -> "Beautyrest Harmony Lux")
+        if (!ctx.productName) {
+          ctx.productName = handleMatch[1]
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }
       }
     }
 
