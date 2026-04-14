@@ -62,9 +62,22 @@ export function sanitizeHostPageContext(raw: unknown): PageContext | null {
       ? (pageRaw as PageContext["page"])
       : "unknown";
 
+  let dwellThreshold: number | undefined;
+  if (typeof o.dwellThreshold === "number" && Number.isFinite(o.dwellThreshold)) {
+    const t = Math.floor(o.dwellThreshold);
+    if (t >= 0 && t <= 86_400_000) dwellThreshold = t;
+  }
+
+  const vidRaw = num(o.productVariantId);
+  const productVariantId =
+    vidRaw !== undefined && vidRaw === Math.floor(vidRaw) && vidRaw > 0
+      ? vidRaw
+      : undefined;
+
   const out: PageContext = {
     page,
     productName: str(o.productName),
+    productVariantId,
     productSku: str(o.productSku),
     productPrice: str(o.productPrice, 20),
     productVendor: str(o.productVendor, 200),
@@ -82,6 +95,14 @@ export function sanitizeHostPageContext(raw: unknown): PageContext | null {
     purchasedProducts: strArr(o.purchasedProducts),
     browsingHistory: historyArr(o.browsingHistory),
   };
+
+  if (typeof o.dwellSeconds === "number" && Number.isFinite(o.dwellSeconds) && o.dwellSeconds >= 0 && o.dwellSeconds < 86400) {
+    out.dwellSeconds = Math.floor(o.dwellSeconds);
+  }
+
+  if (dwellThreshold !== undefined) {
+    out.dwellThreshold = dwellThreshold;
+  }
 
   return out;
 }

@@ -89,6 +89,11 @@
         if (mp.variants && mp.variants.length) {
           ctx.productSku   = mp.variants[0].sku;
           ctx.productPrice = "$" + (mp.variants[0].price / 100).toFixed(2);
+          var mpVid = mp.variants[0].id;
+          if (mpVid != null) {
+            var mpN = Number(mpVid);
+            if (mpN > 0 && isFinite(mpN)) ctx.productVariantId = mpN;
+          }
         }
       }
 
@@ -101,6 +106,11 @@
         if (meta.product.variants && meta.product.variants.length) {
           ctx.productSku   = meta.product.variants[0].sku;
           ctx.productPrice = "$" + (meta.product.variants[0].price / 100).toFixed(2);
+          var saVid = meta.product.variants[0].id;
+          if (saVid != null) {
+            var saN = Number(saVid);
+            if (saN > 0 && isFinite(saN)) ctx.productVariantId = saN;
+          }
         }
       }
 
@@ -148,12 +158,17 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (data && data.product) {
-          callback({
-            productDescription: stripHtml(data.product.body_html || "").slice(0, 500),
-            productImage: data.product.images && data.product.images.length
-              ? data.product.images[0].src : undefined,
-            productTags: data.product.tags ? data.product.tags.split(", ").slice(0, 10) : [],
-          });
+          var p = data.product;
+          var out = {
+            productDescription: stripHtml(p.body_html || "").slice(0, 500),
+            productImage: p.images && p.images.length ? p.images[0].src : undefined,
+            productTags: p.tags ? p.tags.split(", ").slice(0, 10) : [],
+          };
+          if (p.variants && p.variants.length && p.variants[0].id != null) {
+            var jsonN = Number(p.variants[0].id);
+            if (jsonN > 0 && isFinite(jsonN)) out.productVariantId = jsonN;
+          }
+          callback(out);
         }
       })
       .catch(function () { /* not critical */ });
@@ -492,6 +507,97 @@
           safeSet(STORAGE.WIDGET_OPEN, "0");
           chatIsOpen = false;
           startState3();
+          break;
+
+        case "rtg-add-to-cart": {
+          var rawId = e.data.variantId;
+          var vid =
+            typeof rawId === "number" && rawId === Math.floor(rawId)
+              ? rawId
+              : parseInt(String(rawId || ""), 10);
+          var qtyRaw = e.data.quantity;
+          var qty =
+            typeof qtyRaw === "number" && qtyRaw === Math.floor(qtyRaw) && qtyRaw >= 1
+              ? qtyRaw
+              : parseInt(String(qtyRaw == null ? "1" : qtyRaw), 10);
+          if (!qty || qty < 1 || qty > 99) qty = 1;
+          if (!vid || vid < 1 || !isFinite(vid)) {
+            if (ready) {
+              sendToIframe({
+                type: "rtg-cart-action-result",
+                action: "add",
+                ok: false,
+                error: "Invalid variant id",
+              });
+            }
+            break;
+          }
+          fetch("/cart/add.js", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ items: [{ id: vid, quantity: qty }] }),
+          })
+            .then(function (r) {
+              return r.text().then(function (t) {
+                var body = {};
+                if (t) {
+                  try {
+                    body = JSON.parse(t);
+                  } catch (_) {
+                    body = { message: t.slice(0, 200) };
+                  }
+                }
+                return { ok: r.ok, body: body };
+              });
+            })
+            .then(function (res) {
+              var errMsg;
+              if (!res.ok && res.body) {
+                errMsg =
+                  res.body.description ||
+                  res.body.message ||
+                  (typeof res.body === "string" ? res.body : null);
+              }
+              if (ready) {
+                sendToIframe({
+                  type: "rtg-cart-action-result",
+                  action: "add",
+                  ok: res.ok,
+                  error: res.ok ? undefined : errMsg || "Add to cart failed",
+                });
+              }
+              if (res.ok) {
+                fetchCart(function (cartData) {
+                  pageContext = Object.assign(pageContext, cartData);
+                  if (ready) {
+                    sendToIframe({ type: MSG_CONTEXT, context: pageContext });
+                  }
+                });
+                try {
+                  document.documentElement.dispatchEvent(
+                    new CustomEvent("cart:updated", { bubbles: true })
+                  );
+                } catch (_) { /* older browsers */ }
+              }
+            })
+            .catch(function () {
+              if (ready) {
+                sendToIframe({
+                  type: "rtg-cart-action-result",
+                  action: "add",
+                  ok: false,
+                  error: "Network error",
+                });
+              }
+            });
+          break;
+        }
+
+        case "rtg-checkout":
+          window.location.href = "/checkout";
           break;
       }
     });

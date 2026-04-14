@@ -84,6 +84,7 @@ function getPageContext(): PageContext | null {
   return {
     page: ctx.page || "unknown",
     productName: ctx.productName,
+    productVariantId: ctx.productVariantId,
     productSku: ctx.productSku,
     productPrice: ctx.productPrice,
     productVendor: ctx.productVendor,
@@ -97,6 +98,8 @@ function getPageContext(): PageContext | null {
     cartTotal: ctx.cartTotal,
     cartCount: ctx.cartCount,
     searchQuery: ctx.searchQuery,
+    dwellSeconds: ctx.dwellSeconds,
+    dwellThreshold: ctx.dwellThreshold,
     pageHistory: ctx.pageHistory,
     purchasedProducts: ctx.purchasedProducts,
     browsingHistory: ctx.browsingHistory,
@@ -375,6 +378,29 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           reengagementFiredRef.current = true;
           triggerReengagementRef.current?.();
         }
+        return;
+      }
+
+      // Shopify cart / checkout from InlineHTML iframe (relay to host embed.js)
+      if (e.data?.type === "rtg-add-to-cart") {
+        if (!embed || typeof window === "undefined" || window.parent === window) {
+          return;
+        }
+        window.parent.postMessage(
+          {
+            type: "rtg-add-to-cart",
+            variantId: e.data.variantId,
+            quantity: e.data.quantity,
+          },
+          "*"
+        );
+        return;
+      }
+      if (e.data?.type === "rtg-checkout") {
+        if (!embed || typeof window === "undefined" || window.parent === window) {
+          return;
+        }
+        window.parent.postMessage({ type: "rtg-checkout" }, "*");
         return;
       }
 

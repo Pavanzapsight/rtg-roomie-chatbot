@@ -12,6 +12,7 @@ const PRESETS = {
     page: "pdp",
     productName: "Beautyrest Harmony Lux",
     productSku: "BRT-HRM-LUX-Q",
+    productVariantId: 98765432100,
     category: "mattresses",
   },
   "Returning — viewed 3 products": {
