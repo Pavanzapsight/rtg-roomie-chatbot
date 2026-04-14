@@ -15,11 +15,12 @@
 
   // ─── Constants ────────────────────────────────────────────────────────
   var STORAGE = {
-    SESSION:  "rtg_session_id",
-    CHAT:     "rtg_chat_messages",
-    HISTORY:  "rtg_browsing_history",
-    PENDING:  "rtg_pending_product",
-    PROFILE:  "rtg_visitor_profile",
+    SESSION:    "rtg_session_id",
+    CHAT:       "rtg_chat_messages",
+    HISTORY:    "rtg_browsing_history",
+    PENDING:    "rtg_pending_product",
+    PROFILE:    "rtg_visitor_profile",
+    WIDGET_OPEN:"rtg_widget_open",
   };
   var MAX_HISTORY = 30;
   var MSG_CONTEXT = "rtg-page-context-update";
@@ -327,7 +328,10 @@
       "transition:width 0.3s ease, height 0.3s ease",
     ].join(";");
 
-    iframe.setAttribute("style", CLOSED_STYLE);
+    // Restore previous widget open/closed state so the iframe loads at the
+    // right size (no flash of the small pill when the chat was open).
+    var wasOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    iframe.setAttribute("style", wasOpen ? OPEN_STYLE : CLOSED_STYLE);
     iframe.setAttribute("allow", "clipboard-write");
 
     var ready = false;
@@ -357,6 +361,7 @@
           pendingProduct: pending,
           visitorProfile: profile,
           isSharedChat: !!isSharedChat,
+          widgetOpen: wasOpen,
         });
       }
 
@@ -429,10 +434,12 @@
 
         case "rtg-widget-open":
           iframe.setAttribute("style", OPEN_STYLE);
+          safeSet(STORAGE.WIDGET_OPEN, "1");
           break;
 
         case "rtg-widget-close":
           iframe.setAttribute("style", CLOSED_STYLE);
+          safeSet(STORAGE.WIDGET_OPEN, "0");
           break;
       }
     });

@@ -221,6 +221,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setIsOpen(true);
         }
 
+        // Restore previous open/closed state across page navigations
+        if (data.widgetOpen) {
+          setIsOpen(true);
+        }
+
         setLoaded(true);
         return;
       }
@@ -355,15 +360,43 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [displayMessages, loaded]);
 
-  // Scroll to bottom when widget opens or chat is restored
+  // Scroll to bottom when widget opens or chat is restored.
+  // Product card iframes resize asynchronously (images load, content expands),
+  // so a single scrollTop assignment lands "in the middle". We use a
+  // ResizeObserver to keep snapping to the bottom while the container grows,
+  // for a short window after the widget opens.
   useEffect(() => {
-    if (isOpen) {
-      requestAnimationFrame(() => {
-        const container = scrollContainerRef.current;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
+    if (!isOpen) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    function toBottom() {
+      if (container) container.scrollTop = container.scrollHeight;
     }
-  }, [isOpen]);
+
+    // Initial scrolls at staggered times to catch late-loading iframes
+    requestAnimationFrame(toBottom);
+    const timers = [
+      setTimeout(toBottom, 100),
+      setTimeout(toBottom, 300),
+      setTimeout(toBottom, 800),
+    ];
+
+    // Watch for content size changes during the first ~1.5s
+    let pinToBottom = true;
+    const observer = new ResizeObserver(() => {
+      if (pinToBottom) toBottom();
+    });
+    observer.observe(container);
+    const stopPin = setTimeout(() => { pinToBottom = false; }, 1500);
+
+    return () => {
+      timers.forEach(clearTimeout);
+      clearTimeout(stopPin);
+      observer.disconnect();
+    };
+  }, [isOpen, loaded]);
 
   // Scroll so the top of the new AI response sits at 20% from top (leaving 80% for reading)
   const lastAssistantMessageId = messages.findLast((m) => m.role === "assistant")?.id;
