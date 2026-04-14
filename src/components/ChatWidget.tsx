@@ -134,6 +134,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // Trigger refs — set later once useCallbacks are defined
   const triggerContextualRef = useRef<() => void>(undefined);
   const triggerReengagementRef = useRef<() => void>(undefined);
+  const triggerInterjectionRef = useRef<(type: string) => void>(undefined);
+  const triggerNewSessionGreetingRef = useRef<() => void>(undefined);
 
   const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
   const CONTEXTUAL_COOLDOWN_MS = 30 * 1000;       // 30 seconds between messages
@@ -243,6 +245,19 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setIsOpen(true);
         }
 
+        // State 4: Fresh session (all tabs were closed). Populate chat
+        // with a greeting silently — don't auto-open. Gate on the existing
+        // returning-greeting guards (no chat history) so we don't duplicate.
+        if (data.isNewSession && !data.pendingProduct && !data.isSharedChat) {
+          const savedForNewSession = loadMessages();
+          if (!savedForNewSession || savedForNewSession.length === 0) {
+            // Delay slightly so rtg-init is fully processed
+            setTimeout(() => {
+              triggerNewSessionGreetingRef.current?.();
+            }, 100);
+          }
+        }
+
         setLoaded(true);
         return;
       }
@@ -309,6 +324,17 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             triggerContextualRef.current?.();
           }, CONTEXTUAL_DWELL_MS);
         }
+        return;
+      }
+
+      // State 3 interjection from embed.js scheduler (chat closed + time
+      // threshold hit). Auto-open the chat and fire the matching API call.
+      if (e.data?.type === "rtg-interjection" && typeof e.data.interjectionType === "string") {
+        const type = e.data.interjectionType as string;
+        setIsOpen(true);
+        setTimeout(() => {
+          triggerInterjectionRef.current?.(type);
+        }, 250);
         return;
       }
 
@@ -586,10 +612,69 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [transport, messages, humanMode]);
 
+  // State 3: Fire an interjection (chat auto-opened by caller). The
+  // interjectionType ("compare" | "inform" | "guide" | "social" | "resume")
+  // selects the sub-template in skills/interjection.md.
+  const triggerInterjection = useCallback(async (interjectionType: string) => {
+    if (humanMode) return;
+    try {
+      requestExtrasRef.current = {
+        type: "interjection",
+        interjectionType,
+        visitorProfile: visitorProfileRef.current ?? undefined,
+        pageContext: pageContextRef.current,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow */
+    }
+  }, [transport, messages, humanMode]);
+
+  // State 4: Greet on fresh session. Uses the existing returning flow for
+  // returning customers (has visitor profile signal), or a lighter
+  // new-session greeting for first-time customers. Populates chat silently
+  // — does NOT auto-open.
+  const triggerNewSessionGreeting = useCallback(async () => {
+    if (humanMode) return;
+    const profile = loadVisitorProfile();
+    const hasPriorContext = profile.visitCount > 1 || profile.viewedProducts.length > 0;
+    try {
+      setMessages([]);
+      requestExtrasRef.current = hasPriorContext
+        ? {
+            type: "returning",
+            visitorProfile: profile,
+          }
+        : {
+            type: "new-session",
+            visitorProfile: profile,
+          };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: [],
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      setMessages([welcomeUi]);
+    }
+  }, [transport, humanMode, setMessages]);
+
   // Wire up the refs so the message handler (stable across renders) can
   // call the latest version of these callbacks.
   useEffect(() => { triggerContextualRef.current = triggerContextual; }, [triggerContextual]);
   useEffect(() => { triggerReengagementRef.current = triggerReengagement; }, [triggerReengagement]);
+  useEffect(() => { triggerInterjectionRef.current = triggerInterjection; }, [triggerInterjection]);
+  useEffect(() => { triggerNewSessionGreetingRef.current = triggerNewSessionGreeting; }, [triggerNewSessionGreeting]);
 
   // Periodic check: if 20 minutes pass with no activity pulse, mark IDLE.
   // The actual re-engagement fires on the NEXT activity pulse (in the

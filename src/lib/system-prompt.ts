@@ -9,7 +9,9 @@ export type ConversationStage =
   | "comparison"
   | "closing"
   | "reengagement"
-  | "contextual";
+  | "contextual"
+  | "new-session"
+  | "interjection";
 
 export interface VisitorProfile {
   visitCount: number;
@@ -277,6 +279,7 @@ export function buildSystemPrompt(
     pageContext?: PageContext;
     visitorProfile?: VisitorProfile;
     accessoryData?: string;
+    interjectionType?: string;
   }
 ): string {
   // Load universal rules
@@ -299,6 +302,11 @@ export function buildSystemPrompt(
     ? `\n\n---\n\n${options.accessoryData}`
     : "";
 
+  // For interjection stage, tell the skill which sub-template to use
+  const interjectionBlock = options?.interjectionType
+    ? `\n\n---\n\n# INTERJECTION TYPE\n\nUse the "${options.interjectionType}" sub-template from the skill above.`
+    : "";
+
   // Combine: universal rules + current stage skill + context + accessory data + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }

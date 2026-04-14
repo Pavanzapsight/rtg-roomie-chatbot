@@ -14,7 +14,8 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual";
+  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual" | "new-session" | "interjection";
+  interjectionType?: "compare" | "inform" | "guide" | "social" | "resume";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as ChatRequestBody;
-  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model } = body;
+  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model, interjectionType } = body;
 
   // Merge browsing history into page context so it reaches the system prompt
   const pageContext: PageContext | undefined = rawPageContext
@@ -158,6 +159,53 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: `The customer just landed on this product page: ${JSON.stringify(pageContext)}. Generate the contextual commentary.`,
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 4: first-time-visitor greeting (no prior chat history). Uses the
+    // new-session skill which is light — intro + stand by for user input.
+    if (type === "new-session") {
+      const systemPrompt = buildSystemPrompt(catalogData, "new-session", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+      });
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: "The customer just arrived on the site for a fresh session (no chat history). Generate the one-time greeting.",
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 3: BROWSING_CHAT_CLOSED interjection. Subtype tells the skill
+    // which sub-template to use (compare/inform/guide/social/resume).
+    if (type === "interjection" && interjectionType) {
+      const systemPrompt = buildSystemPrompt(catalogData, "interjection", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+        interjectionType,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: modelMessages.length > 0 ? modelMessages : [
+          {
+            role: "user",
+            content: `Generate an interjection of type "${interjectionType}". The customer has the chat closed and is browsing.`,
           },
         ],
       });

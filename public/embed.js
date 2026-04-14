@@ -297,6 +297,33 @@
     var pageContext = getShopifyContext();
     trackPageView(pageContext);
 
+    // ─── Session tracking (State 3 & State 4) ─────────────────────────
+    // sessionStorage is host-page scoped, cleared when ALL tabs close.
+    function getSessionVal(k) {
+      try { return sessionStorage.getItem(k); } catch (_) { return null; }
+    }
+    function setSessionVal(k, v) {
+      try { sessionStorage.setItem(k, v); } catch (_) { /* noop */ }
+    }
+    var isNewSession = !getSessionVal("rtg_session_marker");
+    var sessionStartedAt;
+    if (isNewSession) {
+      sessionStartedAt = Date.now();
+      setSessionVal("rtg_session_marker", "1");
+      setSessionVal("rtg_session_started_at", String(sessionStartedAt));
+      setSessionVal("rtg_state3_count", "0");
+    } else {
+      sessionStartedAt = parseInt(getSessionVal("rtg_session_started_at") || String(Date.now()), 10);
+    }
+    function getState3Count() {
+      return parseInt(getSessionVal("rtg_state3_count") || "0", 10);
+    }
+    function incState3Count() {
+      var n = getState3Count() + 1;
+      setSessionVal("rtg_state3_count", String(n));
+      return n;
+    }
+
     // ── Create iframe ──
     var iframe = document.createElement("iframe");
     iframe.src = origin + "/embed";
@@ -362,7 +389,13 @@
           visitorProfile: profile,
           isSharedChat: !!isSharedChat,
           widgetOpen: wasOpen,
+          isNewSession: isNewSession,
         });
+        // Only fire State 4 greeting on the first tab's first load — not
+        // on subsequent loads in the same session.
+        isNewSession = false;
+        // Kick off State 3 scheduler if chat is closed
+        if (!chatIsOpen) startState3();
       }
 
       if (sharedInput) {
@@ -435,11 +468,15 @@
         case "rtg-widget-open":
           iframe.setAttribute("style", OPEN_STYLE);
           safeSet(STORAGE.WIDGET_OPEN, "1");
+          chatIsOpen = true;
+          stopState3();
           break;
 
         case "rtg-widget-close":
           iframe.setAttribute("style", CLOSED_STYLE);
           safeSet(STORAGE.WIDGET_OPEN, "0");
+          chatIsOpen = false;
+          startState3();
           break;
       }
     });
@@ -450,6 +487,7 @@
       var newUrl = window.location.href;
       if (newUrl === lastUrl) return;
       lastUrl = newUrl;
+      lastNavAt = Date.now(); // reset State 3 navigation guard
 
       // Re-detect context after a short delay (DOM needs to update)
       setTimeout(function () {
@@ -484,6 +522,7 @@
 
     // ── Activity tracking (throttled) — for IDLE/re-engagement detection ──
     var lastActivitySent = 0;
+    var lastNavAt = Date.now(); // fresh page load = navigation
     function onActivity() {
       var now = Date.now();
       if (now - lastActivitySent < 5000) return; // throttle to one pulse per 5s
@@ -493,6 +532,57 @@
     ["mousemove", "scroll", "click", "keydown", "touchstart"].forEach(function (evt) {
       window.addEventListener(evt, onActivity, { passive: true });
     });
+
+    // ── State 3 scheduler (BROWSING_CHAT_CLOSED) ──────────────────────
+    var STATE3_THRESHOLDS = [60_000, 180_000, 480_000]; // 1min, 3min, 8min
+    var STATE3_CHECK_INTERVAL = 15_000;
+    var STATE3_NAV_GUARD_MS = 8_000;
+    var chatIsOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    var state3Interval = null;
+
+    // Heuristic: which interjection type fits the current browsing/chat state?
+    function pickInterjectionType() {
+      var chatMessages = safeJSON(safeGet(STORAGE.CHAT)) || [];
+      var userMsgs = chatMessages.filter(function (m) { return m && m.role === "user"; });
+      var productsViewed = getBrowsingHistory().length;
+      var isPdp = pageContext && pageContext.page === "pdp" && pageContext.productName;
+
+      // Rich prior chat → resume
+      if (userMsgs.length >= 2) return "resume";
+      // On a PDP right now → inform
+      if (isPdp) return "inform";
+      // 2+ products viewed in this session → compare
+      if (productsViewed >= 2) return "compare";
+      // 1 product viewed (near-decision) → social proof
+      if (productsViewed === 1) return "social";
+      // Default → guide (quiz-style narrowing)
+      return "guide";
+    }
+
+    function checkState3() {
+      if (chatIsOpen || !ready) return;
+      var count = getState3Count();
+      if (count >= 3) { stopState3(); return; }
+      var elapsed = Date.now() - sessionStartedAt;
+      var threshold = STATE3_THRESHOLDS[count];
+      if (elapsed < threshold) return;
+      // Guard: don't interrupt right after a navigation
+      if (Date.now() - lastNavAt < STATE3_NAV_GUARD_MS) return;
+      incState3Count();
+      sendToIframe({
+        type: "rtg-interjection",
+        interjectionType: pickInterjectionType(),
+      });
+    }
+    function startState3() {
+      if (state3Interval || chatIsOpen) return;
+      state3Interval = setInterval(checkState3, STATE3_CHECK_INTERVAL);
+      // One immediate check in case a threshold is already overdue
+      setTimeout(checkState3, 500);
+    }
+    function stopState3() {
+      if (state3Interval) { clearInterval(state3Interval); state3Interval = null; }
+    }
 
     // ── Append iframe ──
     document.body.appendChild(iframe);

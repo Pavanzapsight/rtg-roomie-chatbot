@@ -128,6 +128,8 @@ End every response with exactly one tag on its own line (hidden from customer):
 - `[STAGE:closing]` — confirming choice, cross-sell, wrap-up
 - `[STAGE:reengagement]` — welcoming the customer back after 20+ minutes idle
 - `[STAGE:contextual]` — short contextual note when customer lands on a product page with chat open
+- `[STAGE:new-session]` — one-time greeting on a fresh session (all tabs were closed)
+- `[STAGE:interjection]` — scheduled pop-open when chat was closed (compare/inform/guide/social/resume sub-templates)
 
 ## Catalog Data
 
