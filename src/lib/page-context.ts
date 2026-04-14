@@ -70,9 +70,16 @@ export function sanitizeHostPageContext(
     if (t >= 0 && t <= 86_400_000) dwellThreshold = t;
   }
 
+  const vidRaw = num(o.productVariantId);
+  const productVariantId =
+    vidRaw !== undefined && vidRaw === Math.floor(vidRaw) && vidRaw > 0
+      ? vidRaw
+      : undefined;
+
   const out: PageContext & { dwellThreshold?: number } = {
     page,
     productName: str(o.productName),
+    productVariantId,
     productSku: str(o.productSku),
     productPrice: str(o.productPrice, 20),
     productVendor: str(o.productVendor, 200),

@@ -36,6 +36,25 @@ const IFRAME_BRIDGE_SCRIPT = `
     window.parent.postMessage({ type: 'rtg-open-url', url: String(url).trim(), productName: productName || '' }, '*');
   }
 
+  /**
+   * Adds a line item on the host Shopify store (via parent embed script).
+   * variantId: numeric Shopify variant id. quantity: optional, default 1, max 99.
+   */
+  function addToCart(variantId, quantity) {
+    var q = quantity == null || quantity === '' ? 1 : Number(quantity);
+    if (!(q >= 1) || q > 99) q = 1;
+    window.parent.postMessage({
+      type: 'rtg-add-to-cart',
+      variantId: variantId,
+      quantity: Math.floor(q)
+    }, '*');
+  }
+
+  /** Navigates the host Shopify store to /checkout (via parent embed script). */
+  function checkout() {
+    window.parent.postMessage({ type: 'rtg-checkout' }, '*');
+  }
+
   // Auto-resize iframe to fit content — tight, no blank space
   function notifyHeight() {
     // Use body scrollHeight for tightest fit
