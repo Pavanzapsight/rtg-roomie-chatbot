@@ -108,7 +108,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [loaded, setLoaded] = useState(false);
   const [hasInterjected, setHasInterjected] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
-  const [selectedModel, setSelectedModel] = useState("gemini-flash-3");
+  const selectedModel = "gemini-flash-3";
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
   const [humanMode, setHumanMode] = useState(false);
@@ -214,6 +214,16 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation. Then show me action buttons for Add to Cart and Compare with other options.`
             );
           }, 800);
+        }
+
+        // Auto-open the widget when a shared chat link is loaded
+        if (data.isSharedChat) {
+          setIsOpen(true);
+        }
+
+        // Restore previous open/closed state across page navigations
+        if (data.widgetOpen) {
+          setIsOpen(true);
         }
 
         setLoaded(true);
@@ -350,15 +360,43 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [displayMessages, loaded]);
 
-  // Scroll to bottom when widget opens or chat is restored
+  // Scroll to bottom when widget opens or chat is restored.
+  // Product card iframes resize asynchronously (images load, content expands),
+  // so a single scrollTop assignment lands "in the middle". We use a
+  // ResizeObserver to keep snapping to the bottom while the container grows,
+  // for a short window after the widget opens.
   useEffect(() => {
-    if (isOpen) {
-      requestAnimationFrame(() => {
-        const container = scrollContainerRef.current;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
+    if (!isOpen) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    function toBottom() {
+      if (container) container.scrollTop = container.scrollHeight;
     }
-  }, [isOpen]);
+
+    // Initial scrolls at staggered times to catch late-loading iframes
+    requestAnimationFrame(toBottom);
+    const timers = [
+      setTimeout(toBottom, 100),
+      setTimeout(toBottom, 300),
+      setTimeout(toBottom, 800),
+    ];
+
+    // Watch for content size changes during the first ~1.5s
+    let pinToBottom = true;
+    const observer = new ResizeObserver(() => {
+      if (pinToBottom) toBottom();
+    });
+    observer.observe(container);
+    const stopPin = setTimeout(() => { pinToBottom = false; }, 1500);
+
+    return () => {
+      timers.forEach(clearTimeout);
+      clearTimeout(stopPin);
+      observer.disconnect();
+    };
+  }, [isOpen, loaded]);
 
   // Scroll so the top of the new AI response sits at 20% from top (leaving 80% for reading)
   const lastAssistantMessageId = messages.findLast((m) => m.role === "assistant")?.id;
@@ -506,22 +544,47 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     setHumanMode(false);
   }, [setMessages]);
 
-  const handleShare = useCallback(() => {
+  const handleShare = useCallback(async () => {
     const shareableMessages = displayMessages.filter((m) => m.id !== "welcome");
     if (shareableMessages.length === 0) return;
-    const encoded = btoa(encodeURIComponent(JSON.stringify(shareableMessages)));
-    const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
-    navigator.clipboard.writeText(url).catch(() => {
-      // Fallback for browsers that block clipboard in iframes
-      const el = document.createElement("textarea");
-      el.value = url;
-      el.style.position = "fixed";
-      el.style.opacity = "0";
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    });
+
+    try {
+      const json = JSON.stringify(
+        shareableMessages.map((m) => ({ role: m.role, text: m.text }))
+      );
+
+      // Gzip-compress and URL-safe base64 encode so the link is
+      // self-contained (works across browsers/devices) but much shorter
+      // than raw base64.
+      const stream = new Blob([json]).stream().pipeThrough(
+        new CompressionStream("gzip")
+      );
+      const buffer = await new Response(stream).arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const encoded = btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
+
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        const el = document.createElement("textarea");
+        el.value = url;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+    } catch {
+      /* share failed silently */
+    }
   }, [displayMessages]);
 
   const HANDOFF_PHRASES = [
@@ -662,8 +725,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             onClose={handleClose}
             onRefresh={handleRefresh}
             onShare={handleShare}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
           />
 
           <ChatMessages

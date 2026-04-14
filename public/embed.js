@@ -15,11 +15,12 @@
 
   // ─── Constants ────────────────────────────────────────────────────────
   var STORAGE = {
-    SESSION:  "rtg_session_id",
-    CHAT:     "rtg_chat_messages",
-    HISTORY:  "rtg_browsing_history",
-    PENDING:  "rtg_pending_product",
-    PROFILE:  "rtg_visitor_profile",
+    SESSION:    "rtg_session_id",
+    CHAT:       "rtg_chat_messages",
+    HISTORY:    "rtg_browsing_history",
+    PENDING:    "rtg_pending_product",
+    PROFILE:    "rtg_visitor_profile",
+    WIDGET_OPEN:"rtg_widget_open",
   };
   var MAX_HISTORY = 30;
   var MSG_CONTEXT = "rtg-page-context-update";
@@ -213,19 +214,70 @@
     return safeJSON(safeGet(STORAGE.PROFILE)) || null;
   }
 
-  // ─── Shared Chat (via ?chat= URL param) ───────────────────────────────
-  function getSharedChat() {
-    try {
-      var param = new URLSearchParams(window.location.search).get("chat");
-      if (!param) return null;
-      var decoded = JSON.parse(decodeURIComponent(atob(param)));
-      if (!Array.isArray(decoded)) return null;
-      // Remove param from URL without triggering a reload
-      var clean = new URL(window.location.href);
-      clean.searchParams.delete("chat");
-      history.replaceState(null, "", clean.toString());
-      return decoded;
-    } catch (_) { return null; }
+  // ─── Shared Chat ─────────────────────────────────────────────────────
+  // Two formats supported:
+  //   ?chat=<gzip+base64url>  — self-contained (works across browsers)
+  //   ?c=<short-id>           — server-side lookup (in-memory, best effort)
+  function getSharedChatInput() {
+    var params = new URLSearchParams(window.location.search);
+    var chatData = params.get("chat");
+    var shortId = params.get("c");
+    if (!chatData && !shortId) return null;
+
+    var clean = new URL(window.location.href);
+    clean.searchParams.delete("chat");
+    clean.searchParams.delete("c");
+    history.replaceState(null, "", clean.toString());
+
+    return { chatData: chatData, shortId: shortId };
+  }
+
+  // Gzip-decompress a URL-safe base64 string → JSON string
+  function decompressChat(encoded) {
+    var b64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    var stream = new Blob([bytes]).stream().pipeThrough(
+      new DecompressionStream("gzip")
+    );
+    return new Response(stream).text();
+  }
+
+  function resolveSharedChat(origin, input, callback) {
+    // Try the self-contained compressed data first
+    if (input.chatData) {
+      decompressChat(input.chatData)
+        .then(function (json) {
+          var arr = JSON.parse(json);
+          if (Array.isArray(arr)) {
+            callback(arr.map(function (m, i) {
+              return { id: "shared-" + i, role: m.role, text: m.text };
+            }));
+          } else { callback(null); }
+        })
+        .catch(function () { callback(null); });
+      return;
+    }
+
+    // Fallback: short-id server lookup
+    if (input.shortId) {
+      fetch(origin + "/api/share/" + encodeURIComponent(input.shortId))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (data && Array.isArray(data.messages)) {
+            callback(data.messages.map(function (m, i) {
+              return { id: "shared-" + i, role: m.role, text: m.text };
+            }));
+          } else { callback(null); }
+        })
+        .catch(function () { callback(null); });
+      return;
+    }
+
+    callback(null);
   }
 
   // ─── Main Inject ──────────────────────────────────────────────────────
@@ -276,7 +328,10 @@
       "transition:width 0.3s ease, height 0.3s ease",
     ].join(";");
 
-    iframe.setAttribute("style", CLOSED_STYLE);
+    // Restore previous widget open/closed state so the iframe loads at the
+    // right size (no flash of the small pill when the chat was open).
+    var wasOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    iframe.setAttribute("style", wasOpen ? OPEN_STYLE : CLOSED_STYLE);
     iframe.setAttribute("allow", "clipboard-write");
 
     var ready = false;
@@ -290,23 +345,38 @@
     function handleReady() {
       ready = true;
 
-      var sharedChat = getSharedChat();
-      var chatMessages = sharedChat || safeJSON(safeGet(STORAGE.CHAT));
+      var sharedInput = getSharedChatInput();
+      var localChat = safeJSON(safeGet(STORAGE.CHAT));
       var pending = safeJSON(safeGet(STORAGE.PENDING));
       var profile = getVisitorProfile();
       var history = getBrowsingHistory();
 
-      var initPayload = {
-        type: "rtg-init",
-        sessionId: sessionId,
-        chatMessages: chatMessages,
-        pageContext: pageContext,
-        browsingHistory: history,
-        pendingProduct: pending,
-        visitorProfile: profile,
-      };
+      function sendInit(chatMessages, isSharedChat) {
+        sendToIframe({
+          type: "rtg-init",
+          sessionId: sessionId,
+          chatMessages: chatMessages,
+          pageContext: pageContext,
+          browsingHistory: history,
+          pendingProduct: pending,
+          visitorProfile: profile,
+          isSharedChat: !!isSharedChat,
+          widgetOpen: wasOpen,
+        });
+      }
 
-      sendToIframe(initPayload);
+      if (sharedInput) {
+        resolveSharedChat(origin, sharedInput, function (sharedMessages) {
+          if (sharedMessages && sharedMessages.length > 0) {
+            sendInit(sharedMessages, true);
+          } else {
+            // Decode failed or expired — fall back to local chat
+            sendInit(localChat, false);
+          }
+        });
+      } else {
+        sendInit(localChat, false);
+      }
 
       // Clear pending product after sending
       if (pending) safeRemove(STORAGE.PENDING);
@@ -364,10 +434,12 @@
 
         case "rtg-widget-open":
           iframe.setAttribute("style", OPEN_STYLE);
+          safeSet(STORAGE.WIDGET_OPEN, "1");
           break;
 
         case "rtg-widget-close":
           iframe.setAttribute("style", CLOSED_STYLE);
+          safeSet(STORAGE.WIDGET_OPEN, "0");
           break;
       }
     });
