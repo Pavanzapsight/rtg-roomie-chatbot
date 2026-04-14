@@ -322,6 +322,20 @@ export function buildSystemPrompt(
     ? `\n\n---\n\n# INTERJECTION TYPE\n\nUse the "${options.interjectionType}" sub-template from the skill above.`
     : "";
 
-  // Combine: universal rules + current stage skill + context + accessory data + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  // Proactive stages (contextual/reengagement/interjection/new-session) must
+  // NOT render product cards — the skill rules say so and the universal
+  // "EVERY TIME you mention a product, use a card" rule would otherwise
+  // deadlock the model. Emit a hard override so the skill wins.
+  const PROACTIVE_STAGES = new Set<string>([
+    "contextual",
+    "reengagement",
+    "interjection",
+    "new-session",
+  ]);
+  const stageOverride = PROACTIVE_STAGES.has(stage)
+    ? `\n\n---\n\n# HARD OVERRIDE FOR STAGE "${stage}"\n\nIn this stage only, IGNORE the "EVERY TIME you mention a product, render it as an HTML product card" rule. This message is a short proactive note — reference products by NAME (plain text or \`**bold**\`) and do not render product cards. You may still use tile/pill buttons (HTML) for quick-reply options. Follow the word count limit from the active skill.`
+    : "";
+
+  // Combine: universal rules + current stage skill + context + accessory data + override + HTML output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}${stageOverride}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }
