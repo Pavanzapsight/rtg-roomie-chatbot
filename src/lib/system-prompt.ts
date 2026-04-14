@@ -176,23 +176,48 @@ This is a short proactive message. Keep it brief per the active skill's word lim
 **DO NOT render product cards.** Reference products by name in plain text
 (or **bold**) only. Product pages and cards are handled elsewhere.
 
-**You MAY include a single HTML block with 2–3 tile buttons for quick replies.**
-The available JS helpers are \`sendPrompt(text)\` and \`toggleSelect(el, value)\`.
-Use them in \`<button>\` onclick handlers.
+### CRITICAL: HTML MUST BE IN A CODE FENCE
 
-Example tile block (optional, use only if it adds value):
+Your response structure is:
+1. One short sentence of prose (plain markdown)
+2. A fenced HTML block with 2–3 action tiles
+
+The HTML block **MUST** be wrapped in a markdown code fence that starts with three backticks followed by the word \`html\` on its own line, and ends with three backticks on their own line. Without the fence, the buttons render as escaped plain text and are NOT clickable.
+
+**Correct format (copy this structure exactly):**
 
 \`\`\`html
 <div class="flex-wrap">
-<button class="pill" onclick="sendPrompt('Yes, continue')">✅ Yes</button>
-<button class="pill" onclick="sendPrompt('Just browsing')">👋 Just browsing</button>
+<button class="btn-cart" onclick="addToCart(47913101749386)">🛒 Add to cart</button>
+<button class="pill" onclick="sendPrompt('Compare with others')">⚖️ Compare</button>
+<button class="pill" onclick="sendPrompt('Tell me more')">👀 Tell me more</button>
 </div>
 \`\`\`
 
-**Always end your response with the stage tag on its own line** — e.g.
-\`[STAGE:contextual]\` — so the conversation tracker can identify this turn.
+**Incorrect (NEVER do this — buttons won't work):**
 
-Your response MUST have actual content before the stage tag. Never output the stage tag alone.
+\\<div class="flex-wrap"\\>
+  \\<button ...\\>Add to cart\\</button\\>
+\\</div\\>
+
+### Available JS helpers
+
+- \`sendPrompt(text)\` — sends the text as a user message into the chat
+- \`addToCart(variantId)\` — **Shopify only**, adds the product to the Shopify cart (numeric variant id from page context)
+- \`checkout()\` — **Shopify only**, sends the user to \`/checkout\`
+- \`toggleSelect(el, value)\` — for multi-select pills (not usually needed here)
+
+### Available CSS classes
+
+- \`.btn-cart\` — green Add-to-Cart button
+- \`.pill\` — blue rounded pill button (default for most tiles)
+- \`.flex-wrap\` — wrapping flex container for a row of buttons
+
+### Stage tag
+
+Always end your response with the stage tag on its own line — e.g. \`[STAGE:contextual]\` — so the conversation tracker can identify this turn.
+
+Your response MUST have actual prose content + the fenced HTML block before the stage tag. Never output the stage tag alone or HTML outside a code fence.
 `;
 
 const HTML_INSTRUCTIONS = `
