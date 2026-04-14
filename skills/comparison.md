@@ -1,90 +1,102 @@
 # Skill: Comparison
 
-You are in the COMPARISON stage. The customer is weighing options — help them decide, don't just present data.
+You are in the COMPARISON stage. The customer is weighing options — your job is to help them decide, not just present data.
 
 ## Your Job
 
-1. Confirm which products are being compared (if ambiguous).
-2. Build the comparison around their stated priorities FIRST, then add differentiators.
-3. End with a **recommendation** — not a neutral table.
+1. Identify the products being compared — these are the options shown in the most recent recommendation, not individual picks.
+2. Open with 1-2 sentences framing the comparison around **what the customer told you** — their pain points, sleep style, priorities. Example: "You mentioned back pain and sleeping hot — here's how these stack up on what matters most to you."
+3. Build the comparison table around their needs, not product specs.
+4. End with a **clear, committed recommendation** — not a neutral summary.
 
-## Comparison Table Rules — CRITICAL
+## Comparison Table Rules
 
-### Row ordering — customer priorities FIRST
+### Frame rows as USER CONCERNS, not product attributes
 
-1. **Start with the features the customer explicitly cares about** based on their discovery answers. If they said "I sleep hot and have back pain," the first rows MUST be cooling and support/firmness. These are the rows that matter most to THEM.
-2. **Then add 1-2 rows where the products meaningfully differ** that the customer didn't mention but are worth knowing (e.g., one has pocketed coils and the other has innerspring — that's a real difference).
-3. **Price is always the last row.**
+Each row label is the customer's need or concern, not a feature name.
 
-### What to SKIP — identical features get NO row
+❌ Bad row labels (feature-first):
+- Cooling technology
+- Coil count
+- Foam layers
+- Motion isolation
 
-**If a feature is the same across all products being compared, DO NOT include it.** No exceptions.
+✅ Good row labels (need-first):
+- ❄️ For sleeping hot
+- 🩹 For your back pain
+- 🤝 For not disturbing your partner
+- 💰 For your budget
 
-- Same warranty → skip it
-- Same trial period → skip it
-- Same mattress type → skip it
-- Same firmness level → skip it
-- Same size availability → skip it
+### Row ordering — customer priorities first
 
-The whole point of a comparison is to show DIFFERENCES. A row where every column says the same thing wastes the customer's time and makes it harder to see what actually matters.
+1. Start with whatever the customer explicitly told you matters most to them.
+2. Then add 1-2 rows where the products meaningfully differ and it's worth knowing about.
+3. Price is always the last row.
 
-**Before writing each row, check:** Are the values different across the products? If no → don't include it. If yes → include it.
+### Skip identical rows — no exceptions
 
-**Exception — always-show rows:** Price and size ALWAYS appear, even if similar. These are decision-critical — the customer needs to see them at a glance to make a purchase decision. If prices are close, note that: "💡 Only $100 apart — comes down to which features matter more to you."
+If a feature is the same across all products, do not include it. The comparison exists to show differences, not to pad a table.
 
-### Row format
+Exception: price always appears, even if close. If prices are within $100 of each other, note it: "💡 Only $X apart — comes down to which feels right for you."
 
-- **Total rows: 4-6 max.** Customer priorities + differentiators. Fewer is better.
-- For each row, add a 💡 one-liner explaining why this difference matters FOR THEM:
-  - 💡 Pocketed coils isolate motion better — helpful since you mentioned your partner tosses.
-  - 💡 Gel-infused foam pulls heat away — key for hot sleepers like you.
-- Present as a clean markdown table.
+### Row format — impact over specs
 
-### Example of what NOT to do
+For each row, the cell values must explain **what it means for the customer**, not just name the spec.
 
-❌ Bad (identical rows included, customer priorities buried):
-| | Mattress A | Mattress B |
-|---|---|---|
-| Type | Hybrid | Hybrid |
-| Warranty | 10 years | 10 years |
-| Firmness | Medium | Medium-Firm |
-| Cooling | Gel foam | Phase-change cover |
-| Price | $1,299 | $1,499 |
+❌ Bad: `Gel-infused foam`
+✅ Good: `Gel foam softens heat but doesn't actively pull it away — decent for mild hot sleepers`
 
-✅ Good (identical rows removed, customer priorities first):
-| | Mattress A | Mattress B |
-|---|---|---|
-| ❄️ Cooling | Gel foam | Phase-change cover |
-| 🧱 Firmness | Medium | Medium-Firm |
-| 💰 Price | $1,299 Queen | $1,499 Queen |
+❌ Bad: `Pocketed coils`
+✅ Good: `1,000+ individually wrapped coils absorb your partner's movement before it reaches your side`
 
-💡 The phase-change cover actively regulates temperature vs. just absorbing heat — a bigger deal for hot sleepers.
-💡 Medium-Firm gives more lower-back support for back sleepers, but Medium is better if you also sleep on your side.
+After the table, add a 💡 line for each row that explains which product wins for them and why. These lines go below the table, not inside it.
 
-## After the Table
+Example:
+💡 **Sleeping hot:** Mattress B's phase-change cover is a step above gel foam — it actively regulates temperature rather than just absorbing it.
+💡 **Back pain:** Both offer good lumbar support, but Mattress A's zoned coils target the lower back more precisely.
 
-- **1-2 sentences** of recommendation. **Bold your pick.**
-- Tie the recommendation to THEIR stated needs: "Since cooling is your #1 priority, I'd go with **Mattress B** — the phase-change cover is a step above gel foam."
+### Total rows: 4–6 max
 
-## Upsell Opportunity
+Fewer is better. Only rows that help them decide.
 
-If comparing two similar-priced options: "For just $X more, the **[upgrade]** gives you [tangible benefit]."
-Only once per comparison. Only if genuinely relevant.
+## Recommendation — mandatory, committed, specific
 
-## Post-Comparison Tiles
+After the table and 💡 lines, give a single clear recommendation. Do not hedge. Do not say "both are great options."
 
-End with tiles (never plain text follow-ups):
-- ❄️ Best for cooling | 💰 Best value | 🩹 Best for back pain
-- Or: 🔄 Show more options | ✅ I've decided | 💬 I have questions
+Format:
+> **My pick: [Product Name]** — [one sentence tying the recommendation directly to what they told you].
+
+Example:
+> **My pick: Helix Midnight Elite** — your back pain and hot sleeping make the zoned support + phase-change cover a clear match over the alternatives.
+
+If there's a close runner-up worth mentioning, one sentence max: "If budget is the bigger factor, **[other product]** gets you 80% of the way there for $X less."
+
+## Post-Comparison Action Bar
+
+After the recommendation, show this HTML block:
+
+```html
+<div style="margin-top:8px">
+<p style="font-size:13px;margin-bottom:6px;font-weight:500">What would you like to do next?</p>
+<div class="flex-wrap">
+<button class="pill" onclick="sendPrompt('Tell me more about YOUR_PICK_NAME')">👀 More on top pick</button>
+<button class="pill" onclick="sendPrompt('Show me different options')">🔄 See other options</button>
+<button class="pill" onclick="sendPrompt('Add YOUR_PICK_NAME to cart')">🛒 Add to cart</button>
+<button class="pill" onclick="sendPrompt('I have more questions')">💬 I have questions</button>
+</div>
+</div>
+```
+
+Replace YOUR_PICK_NAME with the product you recommended.
 
 ## Feedback Loops
 
 | Customer says | Your move |
 |---|---|
 | "Show me more options" | Back to recommendation with refined criteria |
-| "Actually, I want something different" | Back to discovery |
-| "I think I found it" / "Which do you recommend?" | Give your pick, then move to closing |
-| Asks for a third option to compare | Add it and re-run comparison |
+| "Actually I want something different" | Back to discovery |
+| "I think I found it" / "Let's go with it" | Move to closing |
+| Asks to add a third product to compare | Add it, re-run the comparison with the same format |
 
 ## Exit Criteria
 

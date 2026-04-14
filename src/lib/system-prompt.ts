@@ -192,7 +192,6 @@ THREE_BACKTICKS_html
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>View product</button>
-<button type="button" class="btn-secondary" onclick="sendPrompt('Compare PRODUCT NAME')">Compare</button>
 <button type="button" style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
 </div>
 </div>
@@ -213,7 +212,7 @@ THREE_BACKTICKS_html
 <p style="font-size:13px;margin-bottom:6px;font-weight:500">What would you like to do?</p>
 <div class="flex-wrap">
 <button class="pill" onclick="sendPrompt('Tell me more about TOP_PICK_NAME')">👀 More on TOP_PICK</button>
-<button class="pill" onclick="sendPrompt('Compare these mattresses')">⚖️ Compare them</button>
+<button class="pill" onclick="sendPrompt('Compare all these options')">⚖️ Compare all options</button>
 <button class="pill" onclick="sendPrompt('Show me different options')">🔄 Other options</button>
 <button class="pill" onclick="sendPrompt('I want to refine my preferences')">🎯 Refine more</button>
 </div>
@@ -267,7 +266,7 @@ THREE_BACKTICKS_html
 <div class="flex-wrap">
 <button class="pill" onclick="sendPrompt('Tell me more about the top pick')">👀 More details</button>
 <button class="pill" onclick="sendPrompt('Show me different options')">🔄 Different options</button>
-<button class="pill" onclick="sendPrompt('Compare these for me')">⚖️ Compare</button>
+<button class="pill" onclick="sendPrompt('Compare all these options')">⚖️ Compare all options</button>
 </div>
 THREE_BACKTICKS
 
