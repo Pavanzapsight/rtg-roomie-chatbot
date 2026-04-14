@@ -126,6 +126,8 @@ End every response with exactly one tag on its own line (hidden from customer):
 - `[STAGE:recommendation]` — showing products
 - `[STAGE:comparison]` — comparing products
 - `[STAGE:closing]` — confirming choice, cross-sell, wrap-up
+- `[STAGE:reengagement]` — welcoming the customer back after 20+ minutes idle
+- `[STAGE:contextual]` — short contextual note when customer lands on a product page with chat open
 
 ## Catalog Data
 

@@ -482,6 +482,18 @@
     };
     window.addEventListener("popstate", onUrlChange);
 
+    // ── Activity tracking (throttled) — for IDLE/re-engagement detection ──
+    var lastActivitySent = 0;
+    function onActivity() {
+      var now = Date.now();
+      if (now - lastActivitySent < 5000) return; // throttle to one pulse per 5s
+      lastActivitySent = now;
+      if (ready) sendToIframe({ type: "rtg-activity", at: now });
+    }
+    ["mousemove", "scroll", "click", "keydown", "touchstart"].forEach(function (evt) {
+      window.addEventListener(evt, onActivity, { passive: true });
+    });
+
     // ── Append iframe ──
     document.body.appendChild(iframe);
 

@@ -7,7 +7,9 @@ export type ConversationStage =
   | "discovery"
   | "recommendation"
   | "comparison"
-  | "closing";
+  | "closing"
+  | "reengagement"
+  | "contextual";
 
 export interface VisitorProfile {
   visitCount: number;

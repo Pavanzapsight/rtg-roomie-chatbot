@@ -1,6 +1,6 @@
 import type { ConversationStage } from "./system-prompt";
 
-const STAGE_NAMES = "(returning|greeting|discovery|recommendation|comparison|closing)";
+const STAGE_NAMES = "(returning|greeting|discovery|recommendation|comparison|closing|reengagement|contextual)";
 
 // Anchored version used for detection (must be at end of response).
 // Tolerates optional whitespace after the colon and case variations.

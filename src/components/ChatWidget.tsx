@@ -120,7 +120,24 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const browsingHistoryRef = useRef(browsingHistory);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
-  const lastAutoProductRef = useRef<string>("");
+
+  // State 2 (BROWSING_CHAT_OPEN): contextual product commentary tracking
+  const lastContextualProductRef = useRef<string>("");
+  const lastContextualAtRef = useRef<number>(0);
+  const contextualDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // State 1 (IDLE): track last activity; detect 20min idleness
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const isIdleRef = useRef<boolean>(false);
+  const reengagementFiredRef = useRef<boolean>(false);
+
+  // Trigger refs — set later once useCallbacks are defined
+  const triggerContextualRef = useRef<() => void>(undefined);
+  const triggerReengagementRef = useRef<() => void>(undefined);
+
+  const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
+  const CONTEXTUAL_COOLDOWN_MS = 30 * 1000;       // 30 seconds between messages
+  const CONTEXTUAL_DWELL_MS = 5 * 1000;            // must stay 5s on PDP
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -202,8 +219,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         });
         setVisitorProfile(profile);
 
-        // Handle pending product summary
+        // Handle pending product summary (Behavior A — user clicked a
+        // product card inside the chat). Record the product name so State 2
+        // won't also fire a contextual message for the same product.
         if (data.pendingProduct && data.pendingProduct.productName) {
+          lastContextualProductRef.current = data.pendingProduct.productName;
+          lastContextualAtRef.current = Date.now();
           setIsOpen(true);
           setTimeout(() => {
             handleSendRef.current?.(
@@ -252,19 +273,58 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setVisitorProfile(updated);
         }
 
-        // Auto-show product info when user navigates to a new product page
+        // State 2: BROWSING_CHAT_OPEN — contextual product commentary.
+        // Guards:
+        //  - Chat must be open (user invited us)
+        //  - Page must be a PDP with a productName
+        //  - Different product than last commented on
+        //  - Cooldown: 30s since last contextual message
+        //  - Dwell: 5s on the page before firing
+        //  - Skip if streaming a response or user is composing (has input text)
         if (
           ctx.page === "pdp" &&
           ctx.productName &&
-          ctx.productName !== lastAutoProductRef.current
+          ctx.productName !== lastContextualProductRef.current
         ) {
-          lastAutoProductRef.current = ctx.productName;
-          // Small delay to let enriched data (description, price) arrive
-          setTimeout(() => {
-            handleSendRef.current?.(
-              `I'm now looking at ${ctx.productName}${ctx.productPrice ? " (" + ctx.productPrice + ")" : ""}. Tell me about this product and show me options to Add to Cart, Compare, or keep browsing.`
-            );
-          }, 1500);
+          // Cancel any pending dwell timer from a previous navigation
+          if (contextualDwellTimerRef.current) {
+            clearTimeout(contextualDwellTimerRef.current);
+            contextualDwellTimerRef.current = null;
+          }
+
+          const productAtNavigation = ctx.productName;
+          contextualDwellTimerRef.current = setTimeout(() => {
+            contextualDwellTimerRef.current = null;
+
+            // Re-check all conditions after the dwell — user may have left
+            if (!isOpenRef.current) return;
+            const currentCtx = pageContextRef.current;
+            if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
+            if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
+
+            // Fire the contextual API call (does not inject a user-facing
+            // prompt; uses its own skill via requestExtrasRef)
+            lastContextualProductRef.current = productAtNavigation;
+            lastContextualAtRef.current = Date.now();
+            triggerContextualRef.current?.();
+          }, CONTEXTUAL_DWELL_MS);
+        }
+        return;
+      }
+
+      // Activity pulse from embed.js (throttled to 1 per 5s on host side).
+      // Used for State 1 IDLE detection and re-engagement trigger.
+      if (e.data?.type === "rtg-activity") {
+        const now = Date.now();
+        const wasIdle = isIdleRef.current;
+        isIdleRef.current = false;
+        lastActivityAtRef.current = now;
+
+        // If we were idle and re-engagement hasn't fired yet this cycle,
+        // fire it now. Requires prior conversation + chat must be open.
+        if (wasIdle && !reengagementFiredRef.current && isOpenRef.current) {
+          reengagementFiredRef.current = true;
+          triggerReengagementRef.current?.();
         }
         return;
       }
@@ -479,6 +539,75 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [transport, setMessages]);
 
+  // State 2: Fire contextual product commentary via the API. Uses the
+  // current chat history + page context; skill is `contextual`.
+  const triggerContextual = useCallback(async () => {
+    if (humanMode) return;
+    try {
+      requestExtrasRef.current = {
+        type: "contextual",
+        pageContext: pageContextRef.current,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow — contextual is best-effort */
+    }
+  }, [transport, messages, humanMode]);
+
+  // State 1: Fire re-engagement after idle. Uses existing chat history so
+  // the AI can summarize where the conversation left off.
+  const triggerReengagement = useCallback(async () => {
+    if (humanMode) return;
+    // Require some prior conversation for re-engagement to have context
+    const userMsgs = messages.filter((m) => m.role === "user");
+    if (userMsgs.length === 0) return;
+    try {
+      requestExtrasRef.current = {
+        type: "reengagement",
+        visitorProfile: visitorProfileRef.current ?? undefined,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow */
+    }
+  }, [transport, messages, humanMode]);
+
+  // Wire up the refs so the message handler (stable across renders) can
+  // call the latest version of these callbacks.
+  useEffect(() => { triggerContextualRef.current = triggerContextual; }, [triggerContextual]);
+  useEffect(() => { triggerReengagementRef.current = triggerReengagement; }, [triggerReengagement]);
+
+  // Periodic check: if 20 minutes pass with no activity pulse, mark IDLE.
+  // The actual re-engagement fires on the NEXT activity pulse (in the
+  // message handler), not while the user is still idle.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const gap = Date.now() - lastActivityAtRef.current;
+      if (gap >= IDLE_THRESHOLD_MS) {
+        if (!isIdleRef.current) {
+          isIdleRef.current = true;
+          // Reset the "fired" flag so the NEXT idle cycle can re-engage again
+          reengagementFiredRef.current = false;
+        }
+      }
+    }, 30_000); // check every 30s
+    return () => clearInterval(interval);
+  }, [IDLE_THRESHOLD_MS]);
+
   const handleOpen = useCallback(() => {
     setIsOpen(true);
     if (visitorProfile && visitorProfile.visitCount > 1 && messages.length <= 1) {
@@ -606,6 +735,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const handleSend = useCallback(
     async (text: string) => {
       if (!text.trim() || isStreaming || humanMode) return;
+
+      // Sending a message counts as strong activity — reset idle + re-engagement
+      lastActivityAtRef.current = Date.now();
+      isIdleRef.current = false;
+      reengagementFiredRef.current = false;
 
       // Check for handoff intent
       const lower = text.toLowerCase();

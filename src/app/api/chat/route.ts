@@ -14,7 +14,7 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "returning" | "summarize";
+  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
@@ -110,6 +110,54 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: `Generate a returning visitor greeting for: ${JSON.stringify(visitorProfile)}`,
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 1: Re-engagement after 20min idle. Uses full chat history for the
+    // summary, plus the reengagement skill for phrasing.
+    if (type === "reengagement") {
+      const systemPrompt = buildSystemPrompt(catalogData, "reengagement", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: modelMessages.length > 0 ? modelMessages : [
+          {
+            role: "user",
+            content: "The customer is back after 20 minutes of idle. Generate the re-engagement message.",
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 2: Contextual product commentary (chat open, navigated to PDP,
+    // dwelled 5+ seconds, not within cooldown). Uses the contextual skill.
+    if (type === "contextual" && pageContext) {
+      const systemPrompt = buildSystemPrompt(catalogData, "contextual", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: modelMessages.length > 0 ? modelMessages : [
+          {
+            role: "user",
+            content: `The customer just landed on this product page: ${JSON.stringify(pageContext)}. Generate the contextual commentary.`,
           },
         ],
       });
