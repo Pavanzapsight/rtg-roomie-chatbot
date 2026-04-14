@@ -284,6 +284,37 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           }
         }
 
+        // State 2 on full page load: if chat is open and the customer
+        // landed directly on a PDP (not via pendingProduct or shared chat),
+        // schedule the contextual commentary after the dwell window.
+        // Most Shopify themes do full page loads, so RTG_PAGE_CONTEXT_MESSAGE
+        // won't fire for the initial navigation — we need this branch too.
+        const initialCtx = data.pageContext;
+        const chatWillBeOpen = data.widgetOpen || data.isSharedChat;
+        if (
+          chatWillBeOpen &&
+          !data.pendingProduct &&
+          initialCtx &&
+          initialCtx.page === "pdp" &&
+          initialCtx.productName &&
+          initialCtx.productName !== lastContextualProductRef.current
+        ) {
+          if (contextualDwellTimerRef.current) {
+            clearTimeout(contextualDwellTimerRef.current);
+          }
+          const productAtNavigation = initialCtx.productName;
+          contextualDwellTimerRef.current = setTimeout(() => {
+            contextualDwellTimerRef.current = null;
+            if (!isOpenRef.current) return;
+            const currentCtx = pageContextRef.current;
+            if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
+            if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
+            lastContextualProductRef.current = productAtNavigation;
+            lastContextualAtRef.current = Date.now();
+            triggerContextualRef.current?.();
+          }, CONTEXTUAL_DWELL_MS);
+        }
+
         setLoaded(true);
         return;
       }
