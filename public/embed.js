@@ -315,6 +315,21 @@
     } else {
       sessionStartedAt = parseInt(getSessionVal("rtg_session_started_at") || String(Date.now()), 10);
     }
+
+    // Multi-tab greeting lock: sessionStorage is per-tab, so opening a
+    // second tab would otherwise trigger another State 4 greeting. Use a
+    // shared localStorage timestamp to suppress greetings within 60s.
+    var LAST_GREETING_KEY = "rtg_last_greeting_at";
+    var GREETING_COOLDOWN_MS = 60_000;
+    if (isNewSession) {
+      var lastGreetingAt = parseInt(safeGet(LAST_GREETING_KEY) || "0", 10);
+      if (Date.now() - lastGreetingAt < GREETING_COOLDOWN_MS) {
+        // Another tab greeted very recently — suppress the greeting in this tab
+        isNewSession = false;
+      } else {
+        safeSet(LAST_GREETING_KEY, String(Date.now()));
+      }
+    }
     function getState3Count() {
       return parseInt(getSessionVal("rtg_state3_count") || "0", 10);
     }
@@ -559,8 +574,21 @@
       return "guide";
     }
 
+    // Hard rule: NEVER interrupt cart/checkout flows. We check both the
+    // scraped pageContext and the URL path (Shopify checkout uses a
+    // dedicated domain but the pattern holds for in-theme flows).
+    function isSafePageForInterjection() {
+      if (pageContext && pageContext.page === "cart") return false;
+      var path = window.location.pathname || "";
+      if (/^\/cart(\/|$)/.test(path)) return false;
+      if (/\/checkouts?\//.test(path)) return false;
+      if (/\/checkout($|\/)/.test(path)) return false;
+      return true;
+    }
+
     function checkState3() {
       if (chatIsOpen || !ready) return;
+      if (!isSafePageForInterjection()) return; // Skip cart/checkout
       var count = getState3Count();
       if (count >= 3) { stopState3(); return; }
       var elapsed = Date.now() - sessionStartedAt;

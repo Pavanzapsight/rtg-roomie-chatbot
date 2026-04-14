@@ -34,6 +34,8 @@ import {
   isAllowedContextMessageSource,
   sanitizeHostPageContext,
 } from "@/lib/page-context";
+import { useProactiveGuard, type ProactiveReason } from "@/hooks/useProactiveGuard";
+import { useChatState } from "@/hooks/useChatState";
 
 export interface ChatMessage {
   id: string;
@@ -191,6 +193,27 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const isStreaming = status === "streaming" || status === "submitted";
 
   const displayMessages: ChatMessage[] = messages.map(uiMessageToChatMessage);
+
+  // ── Proactive guard: single gate for all spontaneous messages ──
+  const proactive = useProactiveGuard({ isStreaming, humanMode });
+
+  // Chat state tracking (observable for analytics; does not drive behavior)
+  const [isNewSessionPhase, setIsNewSessionPhase] = useState(false);
+  const lastUserMsgAtRef = useRef<number | null>(null);
+  const userMessageCount = displayMessages.filter((m) => m.role === "user").length;
+  const msSinceLastUserMessage = lastUserMsgAtRef.current != null
+    ? Date.now() - lastUserMsgAtRef.current
+    : null;
+  const chatState = useChatState({
+    isOpen,
+    humanMode,
+    isNewSessionPhase,
+    isIdle: false, // updated by the idle interval below (via ref → re-render)
+    msSinceLastUserMessage,
+  });
+  // Available for future analytics hooks
+  void chatState;
+  void userMessageCount;
 
   // ── Message listener: handles bridge init, context updates, URL clicks, prompts ──
   useEffect(() => {
@@ -565,10 +588,20 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [transport, setMessages]);
 
-  // State 2: Fire contextual product commentary via the API. Uses the
-  // current chat history + page context; skill is `contextual`.
+  // Shared guard gate — every proactive trigger calls this first.
+  const gatedFire = useCallback(
+    (which: ProactiveReason): boolean => {
+      const result = proactive.canFire(which, pageContextRef.current);
+      if (!result.allowed) return false;
+      proactive.markFired();
+      return true;
+    },
+    [proactive]
+  );
+
+  // State 2: Fire contextual product commentary. Routed through the guard.
   const triggerContextual = useCallback(async () => {
-    if (humanMode) return;
+    if (!gatedFire("contextual")) return;
     try {
       requestExtrasRef.current = {
         type: "contextual",
@@ -585,15 +618,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       /* swallow — contextual is best-effort */
     }
-  }, [transport, messages, humanMode]);
+  }, [transport, messages, gatedFire]);
 
-  // State 1: Fire re-engagement after idle. Uses existing chat history so
-  // the AI can summarize where the conversation left off.
+  // State 1: Fire re-engagement after 20min idle. Requires prior conversation.
   const triggerReengagement = useCallback(async () => {
-    if (humanMode) return;
     // Require some prior conversation for re-engagement to have context
     const userMsgs = messages.filter((m) => m.role === "user");
     if (userMsgs.length === 0) return;
+    if (!gatedFire("reengagement")) return;
     try {
       requestExtrasRef.current = {
         type: "reengagement",
@@ -610,13 +642,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       /* swallow */
     }
-  }, [transport, messages, humanMode]);
+  }, [transport, messages, gatedFire]);
 
-  // State 3: Fire an interjection (chat auto-opened by caller). The
-  // interjectionType ("compare" | "inform" | "guide" | "social" | "resume")
-  // selects the sub-template in skills/interjection.md.
+  // State 3: Fire an interjection. Subtype selects the sub-template.
   const triggerInterjection = useCallback(async (interjectionType: string) => {
-    if (humanMode) return;
+    if (!gatedFire("interjection")) return;
     try {
       requestExtrasRef.current = {
         type: "interjection",
@@ -635,27 +665,19 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       /* swallow */
     }
-  }, [transport, messages, humanMode]);
+  }, [transport, messages, gatedFire]);
 
-  // State 4: Greet on fresh session. Uses the existing returning flow for
-  // returning customers (has visitor profile signal), or a lighter
-  // new-session greeting for first-time customers. Populates chat silently
-  // — does NOT auto-open.
+  // State 4: Greet on fresh session. Populates chat silently (no auto-open).
   const triggerNewSessionGreeting = useCallback(async () => {
-    if (humanMode) return;
+    if (!gatedFire("new-session")) return;
     const profile = loadVisitorProfile();
     const hasPriorContext = profile.visitCount > 1 || profile.viewedProducts.length > 0;
+    setIsNewSessionPhase(true);
     try {
       setMessages([]);
       requestExtrasRef.current = hasPriorContext
-        ? {
-            type: "returning",
-            visitorProfile: profile,
-          }
-        : {
-            type: "new-session",
-            visitorProfile: profile,
-          };
+        ? { type: "returning", visitorProfile: profile }
+        : { type: "new-session", visitorProfile: profile };
       const chunkStream = await transport.sendMessages({
         trigger: "submit-message",
         chatId: CHAT_ID,
@@ -667,7 +689,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       setMessages([welcomeUi]);
     }
-  }, [transport, humanMode, setMessages]);
+  }, [transport, setMessages, gatedFire]);
 
   // Wire up the refs so the message handler (stable across renders) can
   // call the latest version of these callbacks.
@@ -821,10 +843,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     async (text: string) => {
       if (!text.trim() || isStreaming || humanMode) return;
 
-      // Sending a message counts as strong activity — reset idle + re-engagement
-      lastActivityAtRef.current = Date.now();
+      // User typing = CONVERSATION mode. Reset all proactive timers/counters.
+      const now = Date.now();
+      lastActivityAtRef.current = now;
       isIdleRef.current = false;
       reengagementFiredRef.current = false;
+      lastUserMsgAtRef.current = now;
+      proactive.markUserActivity();
+      setIsNewSessionPhase(false); // user has engaged; no longer in NEW_SESSION
 
       // Check for handoff intent
       const lower = text.toLowerCase();
