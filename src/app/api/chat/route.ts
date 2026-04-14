@@ -14,7 +14,7 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "proactive" | "returning";
+  type?: "chat" | "proactive" | "returning" | "summarize";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
@@ -79,6 +79,25 @@ export async function POST(request: Request) {
   });
 
   try {
+    if (type === "summarize" && messages.length > 0) {
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: "You are a helpful assistant. Complete this phrase naturally in under 15 words, describing what the customer was looking for based on the conversation: 'looking for...'. Start directly with 'looking for' and end with a period. Do not include any preamble.",
+        messages: [
+          {
+            role: "user",
+            content: `Summarize this conversation:\n${messages
+              .filter((m) => m.id !== "welcome")
+              .map((m) => `${m.role}: ${m.parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("")}`)
+              .join("\n")}`,
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
     if (type === "proactive" && pageContext) {
       const systemPrompt = buildSystemPrompt(catalogData, "proactive", {
         pageContext,

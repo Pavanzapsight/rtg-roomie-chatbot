@@ -1,11 +1,12 @@
 "use client";
 
-import { type RefObject, useMemo } from "react";
+import React, { type RefObject, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { type ChatMessage } from "./ChatWidget";
 import { InlineHTML } from "./InlineHTML";
 import { RTGLogo } from "./RTGLogo";
+import { stripStageTag } from "@/lib/stage-tag";
 
 function TypingIndicator() {
   return (
@@ -31,7 +32,8 @@ interface Segment {
   content: string;
 }
 
-function parseSegments(text: string): Segment[] {
+function parseSegments(rawText: string): Segment[] {
+  const text = stripStageTag(rawText);
   const segments: Segment[] = [];
   const htmlBlockRegex = /```html\s*\n([\s\S]*?)```/g;
   let lastIndex = 0;
@@ -68,10 +70,12 @@ function MessageBubble({
   message,
   isLastAssistant,
   isStreaming,
+  lastAssistantRef,
 }: {
   message: ChatMessage;
   isLastAssistant: boolean;
   isStreaming: boolean;
+  lastAssistantRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const isUser = message.role === "user";
 
@@ -81,6 +85,7 @@ function MessageBubble({
 
   return (
     <div
+      ref={!isUser && isLastAssistant ? lastAssistantRef : undefined}
       className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1.5`}
     >
       {/* Assistant avatar + label */}
@@ -163,10 +168,14 @@ export function ChatMessages({
   messages,
   isStreaming,
   messagesEndRef,
+  lastAssistantRef,
+  scrollContainerRef,
 }: {
   messages: ChatMessage[];
   isStreaming: boolean;
   messagesEndRef: RefObject<HTMLDivElement | null>;
+  lastAssistantRef?: RefObject<HTMLDivElement | null>;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
 }) {
   // Find the last assistant message index for streaming indicator
   let lastAssistantIdx = -1;
@@ -179,6 +188,7 @@ export function ChatMessages({
 
   return (
     <div
+      ref={scrollContainerRef}
       className="chat-messages flex-1 overflow-y-auto py-3"
       style={{ backgroundColor: "var(--rtg-gray-100)" }}
     >
@@ -188,6 +198,7 @@ export function ChatMessages({
           message={msg}
           isLastAssistant={i === lastAssistantIdx}
           isStreaming={isStreaming}
+          lastAssistantRef={lastAssistantRef}
         />
       ))}
       {isStreaming && messages[messages.length - 1]?.role === "user" && (

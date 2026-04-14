@@ -3,24 +3,24 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from "react";
 
 const QUICK_CHIPS = [
-  "Side sleeper",
-  "Back sleeper",
-  "Under $1,000",
-  "Queen size",
-  "Cooling mattress",
-  "Firm mattress",
+  "Help me find the right fit",
+  "My back has been hurting",
+  "Just browsing",
+  "What's popular?",
 ];
 
 export function ChatInput({
   onSend,
   disabled,
   isStreaming,
+  humanMode,
   onAbort,
   onChipClick,
 }: {
   onSend: (text: string) => void;
   disabled: boolean;
   isStreaming: boolean;
+  humanMode?: boolean;
   onAbort: () => void | Promise<void>;
   onChipClick: (text: string) => void;
 }) {
@@ -61,8 +61,18 @@ export function ChatInput({
         backgroundColor: "white",
       }}
     >
+      {/* Human mode banner */}
+      {humanMode && (
+        <div
+          className="px-4 py-2 text-xs font-medium text-center"
+          style={{ backgroundColor: "#f0f7ff", color: "var(--rtg-blue)" }}
+        >
+          You are now connected to a human agent. Refresh to resume AI assistant.
+        </div>
+      )}
+
       {/* Quick reply chips */}
-      {showChips && (
+      {showChips && !humanMode && (
         <div className="flex flex-wrap gap-2 px-4 pt-3">
           {QUICK_CHIPS.map((chip) => (
             <button
@@ -100,7 +110,7 @@ export function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about mattresses..."
+          placeholder={humanMode ? "Chatting with a human agent..." : "Ask about mattresses..."}
           disabled={disabled}
           rows={1}
           className="flex-1 resize-none rounded-xl px-4 py-2.5 text-[15px] leading-relaxed placeholder:text-gray-400 disabled:opacity-50"

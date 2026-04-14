@@ -1,7 +1,12 @@
 import type { ConversationStage } from "./system-prompt";
 
-export const STAGE_REGEX =
-  /\[STAGE:(proactive|returning|greeting|discovery|recommendation|comparison|closing)\]\s*$/;
+const STAGE_NAMES = "(proactive|returning|greeting|discovery|recommendation|comparison|closing)";
+
+// Anchored version used for detection (must be at end of response)
+export const STAGE_REGEX = new RegExp(`\\[STAGE:${STAGE_NAMES}\\]\\s*$`);
+
+// Global version used for stripping — catches the tag anywhere in the text
+const STAGE_REGEX_GLOBAL = new RegExp(`\\[STAGE:${STAGE_NAMES}\\]\\s*`, "g");
 
 export function detectStageFromResponse(text: string): ConversationStage | null {
   const match = text.match(STAGE_REGEX);
@@ -9,7 +14,7 @@ export function detectStageFromResponse(text: string): ConversationStage | null 
 }
 
 export function stripStageTag(text: string): string {
-  return text.replace(STAGE_REGEX, "").trimEnd();
+  return text.replace(STAGE_REGEX_GLOBAL, "").trimEnd();
 }
 
 export function inferStage(

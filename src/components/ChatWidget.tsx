@@ -111,8 +111,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [selectedModel, setSelectedModel] = useState("gemini-flash-3");
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
+  const [humanMode, setHumanMode] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastAssistantRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleSendRef = useRef<(text: string) => void>(undefined);
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visitorProfileRef = useRef(visitorProfile);
@@ -347,9 +350,42 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [displayMessages, loaded]);
 
+  // Scroll to bottom when widget opens or chat is restored
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (isOpen) {
+      requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (container) container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [isOpen]);
+
+  // Scroll so the top of the new AI response sits at 20% from top (leaving 80% for reading)
+  const lastAssistantMessageId = messages.findLast((m) => m.role === "assistant")?.id;
+  const prevAssistantIdRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!lastAssistantMessageId || lastAssistantMessageId === prevAssistantIdRef.current) return;
+    // Only trigger when a brand-new assistant message appears (not on every chunk update)
+    if (status !== "streaming" && status !== "submitted") return;
+    prevAssistantIdRef.current = lastAssistantMessageId;
+
+    requestAnimationFrame(() => {
+      const container = scrollContainerRef.current;
+      const el = lastAssistantRef.current;
+      if (!container || !el) return;
+
+      // Walk offsetParent chain to get true offset relative to the scroll container
+      let offsetTop = 0;
+      let node: HTMLElement | null = el;
+      while (node && node !== container) {
+        offsetTop += node.offsetTop;
+        node = node.offsetParent as HTMLElement | null;
+      }
+
+      container.scrollTo({ top: offsetTop - container.clientHeight * 0.2, behavior: "smooth" });
+    });
+  }, [lastAssistantMessageId, status]);
 
   async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
     const assistantId = generateId();
@@ -467,14 +503,118 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const handleRefresh = useCallback(() => {
     clearMessages();
     setMessages([welcomeUi]);
+    setHumanMode(false);
   }, [setMessages]);
+
+  const handleShare = useCallback(() => {
+    const shareableMessages = displayMessages.filter((m) => m.id !== "welcome");
+    if (shareableMessages.length === 0) return;
+    const encoded = btoa(encodeURIComponent(JSON.stringify(shareableMessages)));
+    const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
+    navigator.clipboard.writeText(url).catch(() => {
+      // Fallback for browsers that block clipboard in iframes
+      const el = document.createElement("textarea");
+      el.value = url;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    });
+  }, [displayMessages]);
+
+  const HANDOFF_PHRASES = [
+    "talk to someone",
+    "talk to a person",
+    "talk to a human",
+    "speak to someone",
+    "speak to a person",
+    "speak to a human",
+    "speak to an agent",
+    "talk to an agent",
+    "human agent",
+    "real person",
+    "live agent",
+    "customer service",
+    "customer support",
+    "representative",
+  ];
+
+  const triggerHandoff = useCallback(async () => {
+    // 1. Show transfer message
+    const transferId = generateId();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: transferId,
+        role: "assistant",
+        parts: [{ type: "text", text: "Sure, transferring you to a human agent." }],
+      },
+    ]);
+
+    // 2. Get summary from API
+    let summary = "";
+    try {
+      requestExtrasRef.current = { type: "summarize" };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      for await (const uiMessage of readUIMessageStream({ stream: chunkStream })) {
+        summary = uiMessage.parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("");
+      }
+    } catch {
+      // summary stays empty
+    }
+
+    // 3. Show Joan's greeting with summary
+    const joanId = generateId();
+    const joanText = summary
+      ? `Hello, this is Joan! I can see you've been ${summary} How can I help you today?`
+      : `Hello, this is Joan! How may I help you today?`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: joanId,
+        role: "assistant",
+        parts: [{ type: "text", text: joanText }],
+      },
+    ]);
+
+    // 4. Lock out AI
+    setHumanMode(true);
+  }, [messages, transport, setMessages]);
 
   const handleSend = useCallback(
     async (text: string) => {
-      if (!text.trim() || isStreaming) return;
+      if (!text.trim() || isStreaming || humanMode) return;
+
+      // Check for handoff intent
+      const lower = text.toLowerCase();
+      if (HANDOFF_PHRASES.some((phrase) => lower.includes(phrase))) {
+        // First append the user message so it shows in chat
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: "user",
+            parts: [{ type: "text", text: text.trim() }],
+          },
+        ]);
+        await triggerHandoff();
+        return;
+      }
+
       await sendMessage({ text: text.trim() });
     },
-    [sendMessage, isStreaming]
+    [sendMessage, isStreaming, humanMode, triggerHandoff, setMessages]
   );
 
   useEffect(() => {
@@ -521,6 +661,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             onMinimize={() => setIsOpen(false)}
             onClose={handleClose}
             onRefresh={handleRefresh}
+            onShare={handleShare}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
           />
@@ -529,12 +670,15 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             messages={displayMessages}
             isStreaming={isStreaming}
             messagesEndRef={messagesEndRef}
+            lastAssistantRef={lastAssistantRef}
+            scrollContainerRef={scrollContainerRef}
           />
 
           <ChatInput
             onSend={handleSend}
-            disabled={isStreaming}
+            disabled={isStreaming || humanMode}
             isStreaming={isStreaming}
+            humanMode={humanMode}
             onAbort={stop}
             onChipClick={handleSend}
           />

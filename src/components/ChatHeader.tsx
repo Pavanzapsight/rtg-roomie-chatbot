@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { RTGLogo } from "./RTGLogo";
 
 const MODELS = [
@@ -12,15 +13,24 @@ export function ChatHeader({
   onMinimize,
   onClose,
   onRefresh,
+  onShare,
   selectedModel,
   onModelChange,
 }: {
   onMinimize: () => void;
   onClose: () => void;
   onRefresh: () => void;
+  onShare: () => void;
   selectedModel: string;
   onModelChange: (model: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleShare() {
+    onShare();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
   return (
     <div
       className="flex h-16 shrink-0 items-center justify-between px-4"
@@ -67,6 +77,22 @@ export function ChatHeader({
             </option>
           ))}
         </select>
+
+        <button
+          onClick={handleShare}
+          className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-white/20"
+          aria-label="Share chat"
+          title="Share chat"
+        >
+          {copied ? (
+            <span className="text-[10px] font-semibold" style={{ color: "white" }}>Copied!</span>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+          )}
+        </button>
 
         <button
           onClick={onRefresh}

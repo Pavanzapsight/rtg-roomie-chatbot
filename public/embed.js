@@ -213,6 +213,21 @@
     return safeJSON(safeGet(STORAGE.PROFILE)) || null;
   }
 
+  // ─── Shared Chat (via ?chat= URL param) ───────────────────────────────
+  function getSharedChat() {
+    try {
+      var param = new URLSearchParams(window.location.search).get("chat");
+      if (!param) return null;
+      var decoded = JSON.parse(decodeURIComponent(atob(param)));
+      if (!Array.isArray(decoded)) return null;
+      // Remove param from URL without triggering a reload
+      var clean = new URL(window.location.href);
+      clean.searchParams.delete("chat");
+      history.replaceState(null, "", clean.toString());
+      return decoded;
+    } catch (_) { return null; }
+  }
+
   // ─── Main Inject ──────────────────────────────────────────────────────
   function inject() {
     // Determine embed origin from the script tag src
@@ -275,7 +290,8 @@
     function handleReady() {
       ready = true;
 
-      var chatMessages = safeJSON(safeGet(STORAGE.CHAT));
+      var sharedChat = getSharedChat();
+      var chatMessages = sharedChat || safeJSON(safeGet(STORAGE.CHAT));
       var pending = safeJSON(safeGet(STORAGE.PENDING));
       var profile = getVisitorProfile();
       var history = getBrowsingHistory();
