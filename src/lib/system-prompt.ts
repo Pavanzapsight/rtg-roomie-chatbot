@@ -31,6 +31,8 @@ export interface BrowsingHistoryEntry {
 export interface PageContext {
   page: "pdp" | "category" | "cart" | "homepage" | "search" | "unknown";
   productName?: string;
+  /** Shopify variant id (numeric) when the embed runs on a Shopify storefront — use with addToCart() in HTML. */
+  productVariantId?: number;
   productSku?: string;
   productPrice?: string;
   productVendor?: string;
@@ -81,6 +83,9 @@ function buildContextNarrative(
       if (pageContext.productVendor) parts.push(`- **Brand:** ${pageContext.productVendor}`);
       if (pageContext.productType) parts.push(`- **Type:** ${pageContext.productType}`);
       if (pageContext.productSku) parts.push(`- **SKU:** ${pageContext.productSku}`);
+      if (pageContext.productVariantId != null) {
+        parts.push(`- **Shopify variant id:** ${pageContext.productVariantId} (use addToCart(${pageContext.productVariantId}) for the on-store cart)`);
+      }
       if (pageContext.productDescription) parts.push(`- **Description:** ${pageContext.productDescription}`);
       if (pageContext.productTags && pageContext.productTags.length) {
         parts.push(`- **Tags:** ${pageContext.productTags.join(", ")}`);
@@ -163,6 +168,8 @@ The syntax is: three backticks followed by "html", then your HTML, then three cl
 These JavaScript helpers are pre-loaded:
 - sendPrompt(text) — immediately sends text as a user chat message
 - openProduct(url, productName) — opens the Rooms To Go product page in the same browser tab. ALWAYS pass the product name as the second argument.
+- addToCart(variantId, quantity) — **Shopify storefront embed only.** Adds a line item via the host store's \`/cart/add.js\`. \`variantId\` must be the numeric Shopify variant id (see page context). \`quantity\` defaults to 1.
+- checkout() — **Shopify storefront embed only.** Sends the customer to the host store's checkout (\`/checkout\`).
 - toggleSelect(element, value) — toggles a pill on/off for multi-select
 - submitSelected(prefix) — sends all toggled values as one message
 
@@ -192,12 +199,13 @@ THREE_BACKTICKS_html
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>View product</button>
-<button type="button" style="background:#2E7D32;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer" onclick="sendPrompt('Add PRODUCT NAME to cart')">🛒 Add to Cart</button>
+<button type="button" class="btn-cart" onclick="addToCart(SHOPIFY_VARIANT_ID)">🛒 Add to Cart</button>
 </div>
 </div>
 THREE_BACKTICKS
 
 - **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog AND the product name as arguments. Do not invent URLs.
+- If **Shopify variant id** appears in page context, use **addToCart(that numeric id)** on buttons for that on-store product; otherwise use **sendPrompt('Add PRODUCT NAME to cart')** for catalog-only flows.
 - Use the exact **Image 1** URL in the img element's src attribute (optional second image: add another img using **Image 2** if present).
 - For onclick handlers, use single quotes on the outside and double quotes around the URL inside openProduct(...) so URLs stay intact.
 

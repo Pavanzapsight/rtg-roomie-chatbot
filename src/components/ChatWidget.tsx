@@ -84,6 +84,7 @@ function getPageContext(): PageContext | null {
   return {
     page: ctx.page || "unknown",
     productName: ctx.productName,
+    productVariantId: ctx.productVariantId,
     productSku: ctx.productSku,
     productPrice: ctx.productPrice,
     productVendor: ctx.productVendor,
@@ -270,6 +271,29 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             );
           }, 1500);
         }
+        return;
+      }
+
+      // Shopify cart / checkout from InlineHTML iframe (relay to host embed.js)
+      if (e.data?.type === "rtg-add-to-cart") {
+        if (!embed || typeof window === "undefined" || window.parent === window) {
+          return;
+        }
+        window.parent.postMessage(
+          {
+            type: "rtg-add-to-cart",
+            variantId: e.data.variantId,
+            quantity: e.data.quantity,
+          },
+          "*"
+        );
+        return;
+      }
+      if (e.data?.type === "rtg-checkout") {
+        if (!embed || typeof window === "undefined" || window.parent === window) {
+          return;
+        }
+        window.parent.postMessage({ type: "rtg-checkout" }, "*");
         return;
       }
 
