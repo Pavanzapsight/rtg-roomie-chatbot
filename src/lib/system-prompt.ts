@@ -354,12 +354,15 @@ export function buildSystemPrompt(
 
   // Proactive stages must NOT render product cards — their skills say so,
   // but the heavy HTML_INSTRUCTIONS would contradict. Give them a lean
-  // tile-only instruction set instead.
+  // tile-only instruction set instead. Note: `returning` is also included
+  // because a welcome-back greeting should never surprise-spawn a product
+  // card; it's a conversation-opening message, not a recommendation.
   const PROACTIVE_STAGES = new Set<string>([
     "contextual",
     "reengagement",
     "interjection",
     "new-session",
+    "returning",
   ]);
 
   const outputRules = PROACTIVE_STAGES.has(stage)
