@@ -2,13 +2,16 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 export type ConversationStage =
-  | "proactive"
   | "returning"
   | "greeting"
   | "discovery"
   | "recommendation"
   | "comparison"
-  | "closing";
+  | "closing"
+  | "reengagement"
+  | "contextual"
+  | "new-session"
+  | "interjection";
 
 export interface VisitorProfile {
   visitCount: number;
@@ -46,7 +49,10 @@ export interface PageContext {
   cartTotal?: string;
   cartCount?: number;
   searchQuery?: string;
+  /** Seconds on current page (from embed / host). */
   dwellSeconds?: number;
+  /** Proactive re-engagement threshold in ms (from mock panel / host). */
+  dwellThreshold?: number;
   pageHistory?: string[];
   purchasedProducts?: string[];
   browsingHistory?: BrowsingHistoryEntry[];
@@ -159,6 +165,61 @@ function getTimeAgo(isoDate: string): string {
 }
 
 // HTML output rules live in code to avoid triple-backtick conflicts in markdown
+// Lean ruleset used for proactive stages (contextual/reengagement/
+// interjection/new-session). No product cards — the skills explicitly
+// forbid them and the heavy ruleset would deadlock the model.
+const PROACTIVE_HTML_INSTRUCTIONS = `
+## Output Rules for Proactive Messages
+
+This is a short proactive message. Keep it brief per the active skill's word limit.
+
+**DO NOT render product cards.** Reference products by name in plain text
+(or **bold**) only. Product pages and cards are handled elsewhere.
+
+### CRITICAL: HTML MUST BE IN A CODE FENCE
+
+Your response structure is:
+1. One short sentence of prose (plain markdown)
+2. A fenced HTML block with 2–3 action tiles
+
+The HTML block **MUST** be wrapped in a markdown code fence that starts with three backticks followed by the word \`html\` on its own line, and ends with three backticks on their own line. Without the fence, the buttons render as escaped plain text and are NOT clickable.
+
+**Correct format (copy this structure exactly):**
+
+\`\`\`html
+<div class="flex-wrap">
+<button class="btn-cart" onclick="addToCart(47913101749386)">🛒 Add to cart</button>
+<button class="pill" onclick="sendPrompt('Compare with others')">⚖️ Compare</button>
+<button class="pill" onclick="sendPrompt('Tell me more')">👀 Tell me more</button>
+</div>
+\`\`\`
+
+**Incorrect (NEVER do this — buttons won't work):**
+
+\\<div class="flex-wrap"\\>
+  \\<button ...\\>Add to cart\\</button\\>
+\\</div\\>
+
+### Available JS helpers
+
+- \`sendPrompt(text)\` — sends the text as a user message into the chat
+- \`addToCart(variantId)\` — **Shopify only**, adds the product to the Shopify cart (numeric variant id from page context)
+- \`checkout()\` — **Shopify only**, sends the user to \`/checkout\`
+- \`toggleSelect(el, value)\` — for multi-select pills (not usually needed here)
+
+### Available CSS classes
+
+- \`.btn-cart\` — green Add-to-Cart button
+- \`.pill\` — blue rounded pill button (default for most tiles)
+- \`.flex-wrap\` — wrapping flex container for a row of buttons
+
+### Stage tag
+
+Always end your response with the stage tag on its own line — e.g. \`[STAGE:contextual]\` — so the conversation tracker can identify this turn.
+
+Your response MUST have actual prose content + the fenced HTML block before the stage tag. Never output the stage tag alone or HTML outside a code fence.
+`;
+
 const HTML_INSTRUCTIONS = `
 ## CRITICAL: Interactive HTML Output Rules
 
@@ -288,6 +349,7 @@ export function buildSystemPrompt(
     pageContext?: PageContext;
     visitorProfile?: VisitorProfile;
     accessoryData?: string;
+    interjectionType?: string;
   }
 ): string {
   // Load universal rules
@@ -310,6 +372,28 @@ export function buildSystemPrompt(
     ? `\n\n---\n\n${options.accessoryData}`
     : "";
 
-  // Combine: universal rules + current stage skill + context + accessory data + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  // For interjection stage, tell the skill which sub-template to use
+  const interjectionBlock = options?.interjectionType
+    ? `\n\n---\n\n# INTERJECTION TYPE\n\nUse the "${options.interjectionType}" sub-template from the skill above.`
+    : "";
+
+  // Proactive stages must NOT render product cards — their skills say so,
+  // but the heavy HTML_INSTRUCTIONS would contradict. Give them a lean
+  // tile-only instruction set instead. Note: `returning` is also included
+  // because a welcome-back greeting should never surprise-spawn a product
+  // card; it's a conversation-opening message, not a recommendation.
+  const PROACTIVE_STAGES = new Set<string>([
+    "contextual",
+    "reengagement",
+    "interjection",
+    "new-session",
+    "returning",
+  ]);
+
+  const outputRules = PROACTIVE_STAGES.has(stage)
+    ? PROACTIVE_HTML_INSTRUCTIONS
+    : HTML_INSTRUCTIONS;
+
+  // Combine: universal rules + current stage skill + context + accessory data + stage-appropriate output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}\n\n---\n\n${outputRules}`;
 }

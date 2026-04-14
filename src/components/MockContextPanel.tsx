@@ -7,7 +7,6 @@ const PRESETS = {
   "Browsing mattresses": {
     page: "category",
     category: "mattresses",
-    dwellThreshold: 30000,
   },
   "On a product page": {
     page: "pdp",
@@ -15,7 +14,6 @@ const PRESETS = {
     productSku: "BRT-HRM-LUX-Q",
     productVariantId: 98765432100,
     category: "mattresses",
-    dwellThreshold: 15000,
   },
   "Returning — viewed 3 products": {
     page: "category",

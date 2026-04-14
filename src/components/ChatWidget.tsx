@@ -34,6 +34,8 @@ import {
   isAllowedContextMessageSource,
   sanitizeHostPageContext,
 } from "@/lib/page-context";
+import { useProactiveGuard, type ProactiveReason } from "@/hooks/useProactiveGuard";
+import { useChatState } from "@/hooks/useChatState";
 
 export interface ChatMessage {
   id: string;
@@ -44,8 +46,6 @@ export interface ChatMessage {
 export type { PageContext };
 
 const CHAT_ID = "rtg-roomie-chat";
-const DWELL_THRESHOLD = 30000; // 30 seconds
-
 const welcomeUi: UIMessage = {
   id: "welcome",
   role: "assistant",
@@ -98,6 +98,8 @@ function getPageContext(): PageContext | null {
     cartTotal: ctx.cartTotal,
     cartCount: ctx.cartCount,
     searchQuery: ctx.searchQuery,
+    dwellSeconds: ctx.dwellSeconds,
+    dwellThreshold: ctx.dwellThreshold,
     pageHistory: ctx.pageHistory,
     purchasedProducts: ctx.purchasedProducts,
     browsingHistory: ctx.browsingHistory,
@@ -107,7 +109,6 @@ function getPageContext(): PageContext | null {
 export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [hasInterjected, setHasInterjected] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const selectedModel = "gemini-flash-3";
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
@@ -118,14 +119,33 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const lastAssistantRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleSendRef = useRef<(text: string) => void>(undefined);
-  const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visitorProfileRef = useRef(visitorProfile);
   const selectedModelRef = useRef(selectedModel);
   const pageContextRef = useRef(pageContext);
   const browsingHistoryRef = useRef(browsingHistory);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
-  const lastAutoProductRef = useRef<string>("");
+
+  // State 2 (BROWSING_CHAT_OPEN): contextual product commentary tracking
+  const lastContextualProductRef = useRef<string>("");
+  const lastContextualAtRef = useRef<number>(0);
+  const contextualDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // State 1 (IDLE): track last activity; detect 20min idleness
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const isIdleRef = useRef<boolean>(false);
+  const reengagementFiredRef = useRef<boolean>(false);
+
+  // Trigger refs — set later once useCallbacks are defined
+  const triggerContextualRef = useRef<() => void>(undefined);
+  const triggerReengagementRef = useRef<() => void>(undefined);
+  const triggerInterjectionRef = useRef<(type: string) => void>(undefined);
+  const triggerNewSessionGreetingRef = useRef<() => void>(undefined);
+  const scheduleContextualForPdpRef = useRef<(ctx: PageContext) => void>(undefined);
+
+  const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
+  const CONTEXTUAL_COOLDOWN_MS = 30 * 1000;       // 30 seconds between messages
+  const CONTEXTUAL_DWELL_MS = 5 * 1000;            // must stay 5s on PDP
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -178,6 +198,27 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const displayMessages: ChatMessage[] = messages.map(uiMessageToChatMessage);
 
+  // ── Proactive guard: single gate for all spontaneous messages ──
+  const proactive = useProactiveGuard({ isStreaming, humanMode });
+
+  // Chat state tracking (observable for analytics; does not drive behavior)
+  const [isNewSessionPhase, setIsNewSessionPhase] = useState(false);
+  const lastUserMsgAtRef = useRef<number | null>(null);
+  const userMessageCount = displayMessages.filter((m) => m.role === "user").length;
+  const msSinceLastUserMessage = lastUserMsgAtRef.current != null
+    ? Date.now() - lastUserMsgAtRef.current
+    : null;
+  const chatState = useChatState({
+    isOpen,
+    humanMode,
+    isNewSessionPhase,
+    isIdle: false, // updated by the idle interval below (via ref → re-render)
+    msSinceLastUserMessage,
+  });
+  // Available for future analytics hooks
+  void chatState;
+  void userMessageCount;
+
   // ── Message listener: handles bridge init, context updates, URL clicks, prompts ──
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
@@ -207,8 +248,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         });
         setVisitorProfile(profile);
 
-        // Handle pending product summary
+        // Handle pending product summary (Behavior A — user clicked a
+        // product card inside the chat). Record the product name so State 2
+        // won't also fire a contextual message for the same product.
         if (data.pendingProduct && data.pendingProduct.productName) {
+          lastContextualProductRef.current = data.pendingProduct.productName;
+          lastContextualAtRef.current = Date.now();
           setIsOpen(true);
           setTimeout(() => {
             handleSendRef.current?.(
@@ -225,6 +270,26 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         // Restore previous open/closed state across page navigations
         if (data.widgetOpen) {
           setIsOpen(true);
+        }
+
+        // State 4: Fresh session (all tabs were closed). ALWAYS fire — whether
+        // there's prior chat history or not. triggerNewSessionGreeting picks
+        // the right path internally (returning vs new-session) and appends
+        // without wiping existing history.
+        if (data.isNewSession && !data.pendingProduct && !data.isSharedChat) {
+          setTimeout(() => {
+            triggerNewSessionGreetingRef.current?.();
+          }, 100);
+        }
+
+        // State 2 on full page load: Shopify themes typically do full page
+        // loads for product clicks, so RTG_PAGE_CONTEXT_MESSAGE won't fire
+        // for the initial navigation. Schedule contextual here too.
+        const initialCtx = data.pageContext as PageContext | undefined;
+        const chatWillBeOpen = data.widgetOpen || data.isSharedChat;
+        if (chatWillBeOpen && !data.pendingProduct && initialCtx) {
+          // Small delay so refs are settled and setIsOpen has flushed
+          setTimeout(() => scheduleContextualForPdpRef.current?.(initialCtx), 300);
         }
 
         setLoaded(true);
@@ -257,19 +322,35 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setVisitorProfile(updated);
         }
 
-        // Auto-show product info when user navigates to a new product page
-        if (
-          ctx.page === "pdp" &&
-          ctx.productName &&
-          ctx.productName !== lastAutoProductRef.current
-        ) {
-          lastAutoProductRef.current = ctx.productName;
-          // Small delay to let enriched data (description, price) arrive
-          setTimeout(() => {
-            handleSendRef.current?.(
-              `I'm now looking at ${ctx.productName}${ctx.productPrice ? " (" + ctx.productPrice + ")" : ""}. Tell me about this product and show me options to Add to Cart, Compare, or keep browsing.`
-            );
-          }, 1500);
+        // State 2: BROWSING_CHAT_OPEN — contextual product commentary
+        scheduleContextualForPdpRef.current?.(ctx);
+        return;
+      }
+
+      // State 3 interjection from embed.js scheduler (chat closed + time
+      // threshold hit). Auto-open the chat and fire the matching API call.
+      if (e.data?.type === "rtg-interjection" && typeof e.data.interjectionType === "string") {
+        const type = e.data.interjectionType as string;
+        setIsOpen(true);
+        setTimeout(() => {
+          triggerInterjectionRef.current?.(type);
+        }, 250);
+        return;
+      }
+
+      // Activity pulse from embed.js (throttled to 1 per 5s on host side).
+      // Used for State 1 IDLE detection and re-engagement trigger.
+      if (e.data?.type === "rtg-activity") {
+        const now = Date.now();
+        const wasIdle = isIdleRef.current;
+        isIdleRef.current = false;
+        lastActivityAtRef.current = now;
+
+        // If we were idle and re-engagement hasn't fired yet this cycle,
+        // fire it now. Requires prior conversation + chat must be open.
+        if (wasIdle && !reengagementFiredRef.current && isOpenRef.current) {
+          reengagementFiredRef.current = true;
+          triggerReengagementRef.current?.();
         }
         return;
       }
@@ -475,54 +556,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }
 
-  // Proactive interjection: fires after 30s of idle (no user messages)
-  useEffect(() => {
-    if (hasInterjected || !loaded) return;
-
-    const userMessages = messages.filter((m) => m.role === "user");
-    if (userMessages.length > 0) return;
-
-    if (typeof document !== "undefined") {
-      const dismissed = document.cookie.includes("rtg_proactive_dismissed=1");
-      if (dismissed) return;
-    }
-
-    dwellTimerRef.current = setTimeout(async () => {
-      const ctx = pageContextRef.current || getPageContext();
-      if (!ctx) return;
-      ctx.dwellSeconds = Math.round(DWELL_THRESHOLD / 1000);
-
-      setHasInterjected(true);
-
-      if (!isOpenRef.current) {
-        setIsOpen(true);
-      }
-
-      try {
-        requestExtrasRef.current = {
-          type: "proactive",
-          pageContext: ctx,
-        };
-        const chunkStream = await transport.sendMessages({
-          trigger: "submit-message",
-          chatId: CHAT_ID,
-          messageId: undefined,
-          messages: [],
-          abortSignal: new AbortController().signal,
-        });
-        await consumeAssistantStream(chunkStream);
-      } catch {
-        if (!isOpenRef.current) {
-          setMessages([welcomeUi]);
-        }
-      }
-    }, DWELL_THRESHOLD);
-
-    return () => {
-      if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
-    };
-  }, [hasInterjected, loaded, messages, transport, setMessages]);
-
   // Generate personalized greeting for returning visitors when widget opens
   const generateReturningGreeting = useCallback(async () => {
     const profile = loadVisitorProfile();
@@ -555,10 +588,180 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [transport, setMessages]);
 
+  // Shared guard gate — every proactive trigger calls this first.
+  const gatedFire = useCallback(
+    (which: ProactiveReason): boolean => {
+      const result = proactive.canFire(which, pageContextRef.current);
+      if (!result.allowed) return false;
+      proactive.markFired();
+      return true;
+    },
+    [proactive]
+  );
+
+  // Reusable: schedule a State 2 contextual commentary after the dwell gate.
+  // Called from the rtg-init handler (full page load), the page-context-update
+  // handler (SPA nav), and handleOpen (user opens chat while on a PDP).
+  const scheduleContextualForPdp = useCallback((ctx: PageContext) => {
+    if (ctx.page !== "pdp" || !ctx.productName) return;
+    if (ctx.productName === lastContextualProductRef.current) return;
+    if (contextualDwellTimerRef.current) {
+      clearTimeout(contextualDwellTimerRef.current);
+      contextualDwellTimerRef.current = null;
+    }
+    const productAtNavigation = ctx.productName;
+    contextualDwellTimerRef.current = setTimeout(() => {
+      contextualDwellTimerRef.current = null;
+      if (!isOpenRef.current) return;
+      const currentCtx = pageContextRef.current;
+      if (!currentCtx || currentCtx.productName !== productAtNavigation) return;
+      if (Date.now() - lastContextualAtRef.current < CONTEXTUAL_COOLDOWN_MS) return;
+      lastContextualProductRef.current = productAtNavigation;
+      lastContextualAtRef.current = Date.now();
+      triggerContextualRef.current?.();
+    }, CONTEXTUAL_DWELL_MS);
+  }, [CONTEXTUAL_COOLDOWN_MS, CONTEXTUAL_DWELL_MS]);
+
+  // State 2: Fire contextual product commentary. Routed through the guard.
+  const triggerContextual = useCallback(async () => {
+    if (!gatedFire("contextual")) return;
+    try {
+      requestExtrasRef.current = {
+        type: "contextual",
+        pageContext: pageContextRef.current,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow — contextual is best-effort */
+    }
+  }, [transport, messages, gatedFire]);
+
+  // State 1: Fire re-engagement after 20min idle. Requires prior conversation.
+  const triggerReengagement = useCallback(async () => {
+    // Require some prior conversation for re-engagement to have context
+    const userMsgs = messages.filter((m) => m.role === "user");
+    if (userMsgs.length === 0) return;
+    if (!gatedFire("reengagement")) return;
+    try {
+      requestExtrasRef.current = {
+        type: "reengagement",
+        visitorProfile: visitorProfileRef.current ?? undefined,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow */
+    }
+  }, [transport, messages, gatedFire]);
+
+  // State 3: Fire an interjection. Subtype selects the sub-template.
+  const triggerInterjection = useCallback(async (interjectionType: string) => {
+    if (!gatedFire("interjection")) return;
+    try {
+      requestExtrasRef.current = {
+        type: "interjection",
+        interjectionType,
+        visitorProfile: visitorProfileRef.current ?? undefined,
+        pageContext: pageContextRef.current,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow */
+    }
+  }, [transport, messages, gatedFire]);
+
+  // State 4: Greet on fresh session. For returning customers with prior chat
+  // history, the greeting is APPENDED (history stays). For new customers with
+  // no prior chat, messages start from a clean slate. Populates silently —
+  // the widget's open/closed state is preserved from the last session.
+  const triggerNewSessionGreeting = useCallback(async () => {
+    if (!gatedFire("new-session")) return;
+    const profile = loadVisitorProfile();
+    const hasPriorChat = messages.filter((m) => m.id !== "welcome").length > 0;
+    const hasPriorContext =
+      hasPriorChat ||
+      profile.visitCount > 1 ||
+      profile.viewedProducts.length > 0;
+    setIsNewSessionPhase(true);
+    try {
+      if (!hasPriorChat) {
+        // New customer: start fresh with no welcome (skill produces the intro)
+        setMessages([]);
+      }
+      requestExtrasRef.current = hasPriorContext
+        ? { type: "returning", visitorProfile: profile }
+        : { type: "new-session", visitorProfile: profile };
+      // When there's prior chat, send the full history to the API so the
+      // returning skill can reference the last topic. When no history, send
+      // empty array and the skill uses the generic new-session intro.
+      const historyForApi = hasPriorChat ? messages : [];
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: historyForApi,
+        abortSignal: new AbortController().signal,
+      });
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      if (!hasPriorChat) setMessages([welcomeUi]);
+    }
+  }, [transport, messages, setMessages, gatedFire]);
+
+  // Wire up the refs so the message handler (stable across renders) can
+  // call the latest version of these callbacks.
+  useEffect(() => { triggerContextualRef.current = triggerContextual; }, [triggerContextual]);
+  useEffect(() => { triggerReengagementRef.current = triggerReengagement; }, [triggerReengagement]);
+  useEffect(() => { triggerInterjectionRef.current = triggerInterjection; }, [triggerInterjection]);
+  useEffect(() => { triggerNewSessionGreetingRef.current = triggerNewSessionGreeting; }, [triggerNewSessionGreeting]);
+  useEffect(() => { scheduleContextualForPdpRef.current = scheduleContextualForPdp; }, [scheduleContextualForPdp]);
+
+  // Periodic check: if 20 minutes pass with no activity pulse, mark IDLE.
+  // The actual re-engagement fires on the NEXT activity pulse (in the
+  // message handler), not while the user is still idle.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const gap = Date.now() - lastActivityAtRef.current;
+      if (gap >= IDLE_THRESHOLD_MS) {
+        if (!isIdleRef.current) {
+          isIdleRef.current = true;
+          // Reset the "fired" flag so the NEXT idle cycle can re-engage again
+          reengagementFiredRef.current = false;
+        }
+      }
+    }, 30_000); // check every 30s
+    return () => clearInterval(interval);
+  }, [IDLE_THRESHOLD_MS]);
+
   const handleOpen = useCallback(() => {
     setIsOpen(true);
     if (visitorProfile && visitorProfile.visitCount > 1 && messages.length <= 1) {
       generateReturningGreeting();
+    }
+    // If user is on a PDP and opens the chat, fire State 2 after dwell
+    const ctx = pageContextRef.current;
+    if (ctx && ctx.page === "pdp" && ctx.productName) {
+      setTimeout(() => scheduleContextualForPdpRef.current?.(ctx), 300);
     }
   }, [visitorProfile, messages.length, generateReturningGreeting]);
 
@@ -683,6 +886,15 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     async (text: string) => {
       if (!text.trim() || isStreaming || humanMode) return;
 
+      // User typing = CONVERSATION mode. Reset all proactive timers/counters.
+      const now = Date.now();
+      lastActivityAtRef.current = now;
+      isIdleRef.current = false;
+      reengagementFiredRef.current = false;
+      lastUserMsgAtRef.current = now;
+      proactive.markUserActivity();
+      setIsNewSessionPhase(false); // user has engaged; no longer in NEW_SESSION
+
       // Check for handoff intent
       const lower = text.toLowerCase();
       if (HANDOFF_PHRASES.some((phrase) => lower.includes(phrase))) {
@@ -710,10 +922,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
-    if (hasInterjected && typeof document !== "undefined") {
-      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300";
-    }
-  }, [hasInterjected]);
+  }, []);
 
   return (
     <>

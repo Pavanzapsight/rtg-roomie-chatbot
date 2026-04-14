@@ -14,7 +14,8 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "proactive" | "returning" | "summarize";
+  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual" | "new-session" | "interjection";
+  interjectionType?: "compare" | "inform" | "guide" | "social" | "resume";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as ChatRequestBody;
-  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model } = body;
+  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model, interjectionType } = body;
 
   // Merge browsing history into page context so it reaches the system prompt
   const pageContext: PageContext | undefined = rawPageContext
@@ -98,17 +99,24 @@ export async function POST(request: Request) {
       });
     }
 
-    if (type === "proactive" && pageContext) {
-      const systemPrompt = buildSystemPrompt(catalogData, "proactive", {
-        pageContext,
+    if (type === "returning" && visitorProfile) {
+      const systemPrompt = buildSystemPrompt(catalogData, "returning", {
+        visitorProfile,
+        pageContext: pageContext ?? undefined,
       });
+      // Include prior chat history (if any) so the AI can reference the
+      // last topic. Always append a trigger message so the AI generates
+      // (an assistant-ended history alone would produce empty output).
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
         messages: [
+          ...modelMessages,
           {
             role: "user",
-            content: `Generate a proactive interjection for: ${JSON.stringify(pageContext)}`,
+            content: `Generate a welcome-back greeting NOW following the returning skill. ${modelMessages.length > 0 ? "Reference one concrete detail from the chat history above." : "The visitor has no prior chat history this session but has visited the site before."} Visitor profile: ${JSON.stringify(visitorProfile)}`,
           },
         ],
       });
@@ -117,9 +125,63 @@ export async function POST(request: Request) {
       });
     }
 
-    if (type === "returning" && visitorProfile) {
-      const systemPrompt = buildSystemPrompt(catalogData, "returning", {
-        visitorProfile,
+    // State 1: Re-engagement after 20min idle. Uses full chat history for the
+    // summary, plus the reengagement skill for phrasing.
+    if (type === "reengagement") {
+      const systemPrompt = buildSystemPrompt(catalogData, "reengagement", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      // Always append a trigger so the AI generates something — existing
+      // history alone ends with an assistant turn and produces empty output.
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: "The customer is back after 20 minutes of idle. Generate the re-engagement message now, following the reengagement skill.",
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 2: Contextual product commentary (chat open, navigated to PDP,
+    // dwelled 5+ seconds, not within cooldown). Uses the contextual skill.
+    if (type === "contextual" && pageContext) {
+      const systemPrompt = buildSystemPrompt(catalogData, "contextual", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: `The customer just landed on the product page for "${pageContext.productName || "a product"}"${pageContext.productPrice ? ` (${pageContext.productPrice})` : ""}. Generate the contextual commentary NOW, following the contextual skill. Keep it under 25 words.`,
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 4: first-time-visitor greeting (no prior chat history). Uses the
+    // new-session skill which is light — intro + stand by for user input.
+    if (type === "new-session") {
+      const systemPrompt = buildSystemPrompt(catalogData, "new-session", {
+        visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
       });
       const result = streamText({
@@ -128,7 +190,33 @@ export async function POST(request: Request) {
         messages: [
           {
             role: "user",
-            content: `Generate a returning visitor greeting for: ${JSON.stringify(visitorProfile)}`,
+            content: "The customer just arrived on the site for a fresh session (no chat history). Generate the one-time greeting.",
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // State 3: BROWSING_CHAT_CLOSED interjection. Subtype tells the skill
+    // which sub-template to use (compare/inform/guide/social/resume).
+    if (type === "interjection" && interjectionType) {
+      const systemPrompt = buildSystemPrompt(catalogData, "interjection", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+        interjectionType,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: `Generate an interjection of type "${interjectionType}" NOW, following the interjection skill's "${interjectionType}" sub-template. The customer has been browsing with the chat closed.`,
           },
         ],
       });

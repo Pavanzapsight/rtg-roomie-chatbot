@@ -129,6 +129,13 @@
       if (handleMatch) {
         ctx.productHandle = handleMatch[1];
         ctx.productUrl = window.location.href;
+        // Final fallback: derive a readable product name from the URL handle
+        // (e.g. "beautyrest-harmony-lux" -> "Beautyrest Harmony Lux")
+        if (!ctx.productName) {
+          ctx.productName = handleMatch[1]
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }
       }
     }
 
@@ -312,6 +319,48 @@
     var pageContext = getShopifyContext();
     trackPageView(pageContext);
 
+    // ─── Session tracking (State 3 & State 4) ─────────────────────────
+    // sessionStorage is host-page scoped, cleared when ALL tabs close.
+    function getSessionVal(k) {
+      try { return sessionStorage.getItem(k); } catch (_) { return null; }
+    }
+    function setSessionVal(k, v) {
+      try { sessionStorage.setItem(k, v); } catch (_) { /* noop */ }
+    }
+    var isNewSession = !getSessionVal("rtg_session_marker");
+    var sessionStartedAt;
+    if (isNewSession) {
+      sessionStartedAt = Date.now();
+      setSessionVal("rtg_session_marker", "1");
+      setSessionVal("rtg_session_started_at", String(sessionStartedAt));
+      setSessionVal("rtg_state3_count", "0");
+    } else {
+      sessionStartedAt = parseInt(getSessionVal("rtg_session_started_at") || String(Date.now()), 10);
+    }
+
+    // Multi-tab greeting lock: sessionStorage is per-tab, so opening a
+    // second tab would otherwise trigger another State 4 greeting. Use a
+    // shared localStorage timestamp to suppress greetings within 60s.
+    var LAST_GREETING_KEY = "rtg_last_greeting_at";
+    var GREETING_COOLDOWN_MS = 60_000;
+    if (isNewSession) {
+      var lastGreetingAt = parseInt(safeGet(LAST_GREETING_KEY) || "0", 10);
+      if (Date.now() - lastGreetingAt < GREETING_COOLDOWN_MS) {
+        // Another tab greeted very recently — suppress the greeting in this tab
+        isNewSession = false;
+      } else {
+        safeSet(LAST_GREETING_KEY, String(Date.now()));
+      }
+    }
+    function getState3Count() {
+      return parseInt(getSessionVal("rtg_state3_count") || "0", 10);
+    }
+    function incState3Count() {
+      var n = getState3Count() + 1;
+      setSessionVal("rtg_state3_count", String(n));
+      return n;
+    }
+
     // ── Create iframe ──
     var iframe = document.createElement("iframe");
     iframe.src = origin + "/embed";
@@ -377,7 +426,13 @@
           visitorProfile: profile,
           isSharedChat: !!isSharedChat,
           widgetOpen: wasOpen,
+          isNewSession: isNewSession,
         });
+        // Only fire State 4 greeting on the first tab's first load — not
+        // on subsequent loads in the same session.
+        isNewSession = false;
+        // Kick off State 3 scheduler if chat is closed
+        if (!chatIsOpen) startState3();
       }
 
       if (sharedInput) {
@@ -450,11 +505,15 @@
         case "rtg-widget-open":
           iframe.setAttribute("style", OPEN_STYLE);
           safeSet(STORAGE.WIDGET_OPEN, "1");
+          chatIsOpen = true;
+          stopState3();
           break;
 
         case "rtg-widget-close":
           iframe.setAttribute("style", CLOSED_STYLE);
           safeSet(STORAGE.WIDGET_OPEN, "0");
+          chatIsOpen = false;
+          startState3();
           break;
 
         case "rtg-add-to-cart": {
@@ -556,6 +615,7 @@
       var newUrl = window.location.href;
       if (newUrl === lastUrl) return;
       lastUrl = newUrl;
+      lastNavAt = Date.now(); // reset State 3 navigation guard
 
       // Re-detect context after a short delay (DOM needs to update)
       setTimeout(function () {
@@ -587,6 +647,83 @@
       onUrlChange();
     };
     window.addEventListener("popstate", onUrlChange);
+
+    // ── Activity tracking (throttled) — for IDLE/re-engagement detection ──
+    var lastActivitySent = 0;
+    var lastNavAt = Date.now(); // fresh page load = navigation
+    function onActivity() {
+      var now = Date.now();
+      if (now - lastActivitySent < 5000) return; // throttle to one pulse per 5s
+      lastActivitySent = now;
+      if (ready) sendToIframe({ type: "rtg-activity", at: now });
+    }
+    ["mousemove", "scroll", "click", "keydown", "touchstart"].forEach(function (evt) {
+      window.addEventListener(evt, onActivity, { passive: true });
+    });
+
+    // ── State 3 scheduler (BROWSING_CHAT_CLOSED) ──────────────────────
+    var STATE3_THRESHOLDS = [60_000, 180_000, 480_000]; // 1min, 3min, 8min
+    var STATE3_CHECK_INTERVAL = 15_000;
+    var STATE3_NAV_GUARD_MS = 8_000;
+    var chatIsOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    var state3Interval = null;
+
+    // Heuristic: which interjection type fits the current browsing/chat state?
+    function pickInterjectionType() {
+      var chatMessages = safeJSON(safeGet(STORAGE.CHAT)) || [];
+      var userMsgs = chatMessages.filter(function (m) { return m && m.role === "user"; });
+      var productsViewed = getBrowsingHistory().length;
+      var isPdp = pageContext && pageContext.page === "pdp" && pageContext.productName;
+
+      // Rich prior chat → resume
+      if (userMsgs.length >= 2) return "resume";
+      // On a PDP right now → inform
+      if (isPdp) return "inform";
+      // 2+ products viewed in this session → compare
+      if (productsViewed >= 2) return "compare";
+      // 1 product viewed (near-decision) → social proof
+      if (productsViewed === 1) return "social";
+      // Default → guide (quiz-style narrowing)
+      return "guide";
+    }
+
+    // Hard rule: NEVER interrupt cart/checkout flows. We check both the
+    // scraped pageContext and the URL path (Shopify checkout uses a
+    // dedicated domain but the pattern holds for in-theme flows).
+    function isSafePageForInterjection() {
+      if (pageContext && pageContext.page === "cart") return false;
+      var path = window.location.pathname || "";
+      if (/^\/cart(\/|$)/.test(path)) return false;
+      if (/\/checkouts?\//.test(path)) return false;
+      if (/\/checkout($|\/)/.test(path)) return false;
+      return true;
+    }
+
+    function checkState3() {
+      if (chatIsOpen || !ready) return;
+      if (!isSafePageForInterjection()) return; // Skip cart/checkout
+      var count = getState3Count();
+      if (count >= 3) { stopState3(); return; }
+      var elapsed = Date.now() - sessionStartedAt;
+      var threshold = STATE3_THRESHOLDS[count];
+      if (elapsed < threshold) return;
+      // Guard: don't interrupt right after a navigation
+      if (Date.now() - lastNavAt < STATE3_NAV_GUARD_MS) return;
+      incState3Count();
+      sendToIframe({
+        type: "rtg-interjection",
+        interjectionType: pickInterjectionType(),
+      });
+    }
+    function startState3() {
+      if (state3Interval || chatIsOpen) return;
+      state3Interval = setInterval(checkState3, STATE3_CHECK_INTERVAL);
+      // One immediate check in case a threshold is already overdue
+      setTimeout(checkState3, 500);
+    }
+    function stopState3() {
+      if (state3Interval) { clearInterval(state3Interval); state3Interval = null; }
+    }
 
     // ── Append iframe ──
     document.body.appendChild(iframe);

@@ -52,9 +52,7 @@ function historyArr(v: unknown): BrowsingHistoryEntry[] | undefined {
  * Validates data from the parent page (postMessage) before merging into
  * `window.RTG_CHAT_CONTEXT`. Rejects prototype pollution and oversized values.
  */
-export function sanitizeHostPageContext(
-  raw: unknown
-): (PageContext & { dwellThreshold?: number }) | null {
+export function sanitizeHostPageContext(raw: unknown): PageContext | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
 
@@ -76,7 +74,7 @@ export function sanitizeHostPageContext(
       ? vidRaw
       : undefined;
 
-  const out: PageContext & { dwellThreshold?: number } = {
+  const out: PageContext = {
     page,
     productName: str(o.productName),
     productVariantId,
