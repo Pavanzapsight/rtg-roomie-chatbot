@@ -279,6 +279,7 @@ export function buildSystemPrompt(
   options?: {
     pageContext?: PageContext;
     visitorProfile?: VisitorProfile;
+    accessoryData?: string;
   }
 ): string {
   // Load universal rules
@@ -296,6 +297,11 @@ export function buildSystemPrompt(
     options?.visitorProfile
   );
 
-  // Combine: universal rules + current stage skill + context + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  // Inject accessory catalog for closing stage
+  const accessoryBlock = options?.accessoryData
+    ? `\n\n---\n\n${options.accessoryData}`
+    : "";
+
+  // Combine: universal rules + current stage skill + context + accessory data + HTML output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}\n\n---\n\n${HTML_INSTRUCTIONS}`;
 }

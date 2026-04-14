@@ -6,7 +6,7 @@ import {
   type PageContext,
   type BrowsingHistoryEntry,
 } from "@/lib/system-prompt";
-import { getCatalogData } from "@/lib/catalog";
+import { getCatalogData, getAccessoryData } from "@/lib/catalog";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
 
 export const maxDuration = 60;
@@ -145,6 +145,7 @@ export async function POST(request: Request) {
     const systemPrompt = buildSystemPrompt(catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
       pageContext: pageContext ?? undefined,
+      accessoryData: currentStage === "closing" ? getAccessoryData() : undefined,
     });
 
     const sanitized = sanitizeForModel(messages);
