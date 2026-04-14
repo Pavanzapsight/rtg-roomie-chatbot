@@ -213,19 +213,33 @@
     return safeJSON(safeGet(STORAGE.PROFILE)) || null;
   }
 
-  // ─── Shared Chat (via ?chat= URL param) ───────────────────────────────
-  function getSharedChat() {
-    try {
-      var param = new URLSearchParams(window.location.search).get("chat");
-      if (!param) return null;
-      var decoded = JSON.parse(decodeURIComponent(atob(param)));
-      if (!Array.isArray(decoded)) return null;
-      // Remove param from URL without triggering a reload
-      var clean = new URL(window.location.href);
-      clean.searchParams.delete("chat");
-      history.replaceState(null, "", clean.toString());
-      return decoded;
-    } catch (_) { return null; }
+  // ─── Shared Chat (via ?c= URL param → fetches from /api/share/:id) ───
+  function getSharedChatId() {
+    var params = new URLSearchParams(window.location.search);
+    var id = params.get("c") || params.get("chat"); // back-compat with old links
+    if (!id) return null;
+    // Remove the param from the URL without reloading
+    var clean = new URL(window.location.href);
+    clean.searchParams.delete("c");
+    clean.searchParams.delete("chat");
+    history.replaceState(null, "", clean.toString());
+    return id;
+  }
+
+  function fetchSharedChat(origin, id, callback) {
+    fetch(origin + "/api/share/" + encodeURIComponent(id))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && Array.isArray(data.messages)) {
+          // Add ids so UI can render them
+          callback(data.messages.map(function (m, i) {
+            return { id: "shared-" + i, role: m.role, text: m.text };
+          }));
+        } else {
+          callback(null);
+        }
+      })
+      .catch(function () { callback(null); });
   }
 
   // ─── Main Inject ──────────────────────────────────────────────────────
@@ -290,23 +304,38 @@
     function handleReady() {
       ready = true;
 
-      var sharedChat = getSharedChat();
-      var chatMessages = sharedChat || safeJSON(safeGet(STORAGE.CHAT));
+      var sharedChatId = getSharedChatId();
+      var localChat = safeJSON(safeGet(STORAGE.CHAT));
       var pending = safeJSON(safeGet(STORAGE.PENDING));
       var profile = getVisitorProfile();
       var history = getBrowsingHistory();
 
-      var initPayload = {
-        type: "rtg-init",
-        sessionId: sessionId,
-        chatMessages: chatMessages,
-        pageContext: pageContext,
-        browsingHistory: history,
-        pendingProduct: pending,
-        visitorProfile: profile,
-      };
+      function sendInit(chatMessages, isSharedChat) {
+        sendToIframe({
+          type: "rtg-init",
+          sessionId: sessionId,
+          chatMessages: chatMessages,
+          pageContext: pageContext,
+          browsingHistory: history,
+          pendingProduct: pending,
+          visitorProfile: profile,
+          isSharedChat: !!isSharedChat,
+        });
+      }
 
-      sendToIframe(initPayload);
+      if (sharedChatId) {
+        // Fetch shared chat from the API, then init (iframe stays ready until we send)
+        fetchSharedChat(origin, sharedChatId, function (sharedMessages) {
+          if (sharedMessages && sharedMessages.length > 0) {
+            sendInit(sharedMessages, true);
+          } else {
+            // Share not found or expired — fall back to local chat
+            sendInit(localChat, false);
+          }
+        });
+      } else {
+        sendInit(localChat, false);
+      }
 
       // Clear pending product after sending
       if (pending) safeRemove(STORAGE.PENDING);

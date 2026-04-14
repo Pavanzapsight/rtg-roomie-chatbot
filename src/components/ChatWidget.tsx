@@ -108,7 +108,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [loaded, setLoaded] = useState(false);
   const [hasInterjected, setHasInterjected] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
-  const [selectedModel, setSelectedModel] = useState("gemini-flash-3");
+  const selectedModel = "gemini-flash-3";
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
   const [humanMode, setHumanMode] = useState(false);
@@ -214,6 +214,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation. Then show me action buttons for Add to Cart and Compare with other options.`
             );
           }, 800);
+        }
+
+        // Auto-open the widget when a shared chat link is loaded
+        if (data.isSharedChat) {
+          setIsOpen(true);
         }
 
         setLoaded(true);
@@ -506,22 +511,38 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     setHumanMode(false);
   }, [setMessages]);
 
-  const handleShare = useCallback(() => {
+  const handleShare = useCallback(async () => {
     const shareableMessages = displayMessages.filter((m) => m.id !== "welcome");
     if (shareableMessages.length === 0) return;
-    const encoded = btoa(encodeURIComponent(JSON.stringify(shareableMessages)));
-    const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
-    navigator.clipboard.writeText(url).catch(() => {
-      // Fallback for browsers that block clipboard in iframes
-      const el = document.createElement("textarea");
-      el.value = url;
-      el.style.position = "fixed";
-      el.style.opacity = "0";
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    });
+
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: shareableMessages.map((m) => ({ role: m.role, text: m.text })),
+        }),
+      });
+      if (!res.ok) throw new Error("share failed");
+      const { id } = await res.json();
+      const url = `https://rtg-275.myshopify.com/?c=${id}`;
+
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // Clipboard blocked — fallback to execCommand
+        const el = document.createElement("textarea");
+        el.value = url;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      }
+    } catch {
+      /* share failed silently */
+    }
   }, [displayMessages]);
 
   const HANDOFF_PHRASES = [
@@ -630,20 +651,20 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   return (
     <>
-      {/* Toggle button — Shopping Assistant pill */}
+      {/* Toggle button — Rooms To Go pill */}
       {!isOpen && (
         <button
           onClick={handleOpen}
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 ${embed ? "pointer-events-auto" : ""}`}
           style={{ backgroundColor: "var(--rtg-blue)" }}
-          aria-label="Open Shopping Assistant"
+          aria-label="Open Rooms To Go chat"
         >
           <RTGLogo size={32} />
           <span
-            className="text-sm font-semibold"
+            className="text-sm font-bold tracking-wide"
             style={{ color: "white" }}
           >
-            Shopping Assistant
+            ROOMS TO GO
           </span>
         </button>
       )}
@@ -662,8 +683,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             onClose={handleClose}
             onRefresh={handleRefresh}
             onShare={handleShare}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
           />
 
           <ChatMessages
