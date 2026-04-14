@@ -651,20 +651,20 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   return (
     <>
-      {/* Toggle button — Rooms To Go pill */}
+      {/* Toggle button — Shopping Assistant pill */}
       {!isOpen && (
         <button
           onClick={handleOpen}
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 ${embed ? "pointer-events-auto" : ""}`}
           style={{ backgroundColor: "var(--rtg-blue)" }}
-          aria-label="Open Rooms To Go chat"
+          aria-label="Open Shopping Assistant"
         >
           <RTGLogo size={32} />
           <span
-            className="text-sm font-bold tracking-wide"
+            className="text-sm font-semibold"
             style={{ color: "white" }}
           >
-            ROOMS TO GO
+            Shopping Assistant
           </span>
         </button>
       )}
