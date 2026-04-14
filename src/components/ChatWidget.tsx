@@ -272,17 +272,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setIsOpen(true);
         }
 
-        // State 4: Fresh session (all tabs were closed). Populate chat
-        // with a greeting silently — don't auto-open. Gate on the existing
-        // returning-greeting guards (no chat history) so we don't duplicate.
+        // State 4: Fresh session (all tabs were closed). ALWAYS fire — whether
+        // there's prior chat history or not. triggerNewSessionGreeting picks
+        // the right path internally (returning vs new-session) and appends
+        // without wiping existing history.
         if (data.isNewSession && !data.pendingProduct && !data.isSharedChat) {
-          const savedForNewSession = loadMessages();
-          if (!savedForNewSession || savedForNewSession.length === 0) {
-            // Delay slightly so rtg-init is fully processed
-            setTimeout(() => {
-              triggerNewSessionGreetingRef.current?.();
-            }, 100);
-          }
+          setTimeout(() => {
+            triggerNewSessionGreetingRef.current?.();
+          }, 100);
         }
 
         // State 2 on full page load: Shopify themes typically do full page
@@ -693,29 +690,43 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [transport, messages, gatedFire]);
 
-  // State 4: Greet on fresh session. Populates chat silently (no auto-open).
+  // State 4: Greet on fresh session. For returning customers with prior chat
+  // history, the greeting is APPENDED (history stays). For new customers with
+  // no prior chat, messages start from a clean slate. Populates silently —
+  // the widget's open/closed state is preserved from the last session.
   const triggerNewSessionGreeting = useCallback(async () => {
     if (!gatedFire("new-session")) return;
     const profile = loadVisitorProfile();
-    const hasPriorContext = profile.visitCount > 1 || profile.viewedProducts.length > 0;
+    const hasPriorChat = messages.filter((m) => m.id !== "welcome").length > 0;
+    const hasPriorContext =
+      hasPriorChat ||
+      profile.visitCount > 1 ||
+      profile.viewedProducts.length > 0;
     setIsNewSessionPhase(true);
     try {
-      setMessages([]);
+      if (!hasPriorChat) {
+        // New customer: start fresh with no welcome (skill produces the intro)
+        setMessages([]);
+      }
       requestExtrasRef.current = hasPriorContext
         ? { type: "returning", visitorProfile: profile }
         : { type: "new-session", visitorProfile: profile };
+      // When there's prior chat, send the full history to the API so the
+      // returning skill can reference the last topic. When no history, send
+      // empty array and the skill uses the generic new-session intro.
+      const historyForApi = hasPriorChat ? messages : [];
       const chunkStream = await transport.sendMessages({
         trigger: "submit-message",
         chatId: CHAT_ID,
         messageId: undefined,
-        messages: [],
+        messages: historyForApi,
         abortSignal: new AbortController().signal,
       });
       await consumeAssistantStream(chunkStream);
     } catch {
-      setMessages([welcomeUi]);
+      if (!hasPriorChat) setMessages([welcomeUi]);
     }
-  }, [transport, setMessages, gatedFire]);
+  }, [transport, messages, setMessages, gatedFire]);
 
   // Wire up the refs so the message handler (stable across renders) can
   // call the latest version of these callbacks.

@@ -104,13 +104,19 @@ export async function POST(request: Request) {
         visitorProfile,
         pageContext: pageContext ?? undefined,
       });
+      // Include prior chat history (if any) so the AI can reference the
+      // last topic. Always append a trigger message so the AI generates
+      // (an assistant-ended history alone would produce empty output).
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
         messages: [
+          ...modelMessages,
           {
             role: "user",
-            content: `Generate a returning visitor greeting for: ${JSON.stringify(visitorProfile)}`,
+            content: `Generate a welcome-back greeting NOW following the returning skill. ${modelMessages.length > 0 ? "Reference one concrete detail from the chat history above." : "The visitor has no prior chat history this session but has visited the site before."} Visitor profile: ${JSON.stringify(visitorProfile)}`,
           },
         ],
       });
