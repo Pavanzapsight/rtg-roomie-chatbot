@@ -196,7 +196,17 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const isStreaming = status === "streaming" || status === "submitted";
 
-  const displayMessages: ChatMessage[] = messages.map(uiMessageToChatMessage);
+  // After uiMessageToChatMessage (which strips stage tags), an assistant
+  // bubble with empty/whitespace-only text is a broken/failed generation.
+  // Filter it out so the user doesn't see blank bubbles. Keep user messages
+  // regardless (users sending an empty string are already blocked upstream).
+  const displayMessages: ChatMessage[] = messages
+    .map(uiMessageToChatMessage)
+    .filter((m) => {
+      if (m.role === "user") return true;
+      const trimmed = m.text.replace(/["'\s]+/g, "");
+      return trimmed.length > 0;
+    });
 
   // ── Proactive guard: single gate for all spontaneous messages ──
   const proactive = useProactiveGuard({ isStreaming, humanMode });

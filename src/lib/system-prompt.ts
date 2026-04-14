@@ -165,6 +165,36 @@ function getTimeAgo(isoDate: string): string {
 }
 
 // HTML output rules live in code to avoid triple-backtick conflicts in markdown
+// Lean ruleset used for proactive stages (contextual/reengagement/
+// interjection/new-session). No product cards — the skills explicitly
+// forbid them and the heavy ruleset would deadlock the model.
+const PROACTIVE_HTML_INSTRUCTIONS = `
+## Output Rules for Proactive Messages
+
+This is a short proactive message. Keep it brief per the active skill's word limit.
+
+**DO NOT render product cards.** Reference products by name in plain text
+(or **bold**) only. Product pages and cards are handled elsewhere.
+
+**You MAY include a single HTML block with 2–3 tile buttons for quick replies.**
+The available JS helpers are \`sendPrompt(text)\` and \`toggleSelect(el, value)\`.
+Use them in \`<button>\` onclick handlers.
+
+Example tile block (optional, use only if it adds value):
+
+\`\`\`html
+<div class="flex-wrap">
+<button class="pill" onclick="sendPrompt('Yes, continue')">✅ Yes</button>
+<button class="pill" onclick="sendPrompt('Just browsing')">👋 Just browsing</button>
+</div>
+\`\`\`
+
+**Always end your response with the stage tag on its own line** — e.g.
+\`[STAGE:contextual]\` — so the conversation tracker can identify this turn.
+
+Your response MUST have actual content before the stage tag. Never output the stage tag alone.
+`;
+
 const HTML_INSTRUCTIONS = `
 ## CRITICAL: Interactive HTML Output Rules
 
@@ -322,20 +352,20 @@ export function buildSystemPrompt(
     ? `\n\n---\n\n# INTERJECTION TYPE\n\nUse the "${options.interjectionType}" sub-template from the skill above.`
     : "";
 
-  // Proactive stages (contextual/reengagement/interjection/new-session) must
-  // NOT render product cards — the skill rules say so and the universal
-  // "EVERY TIME you mention a product, use a card" rule would otherwise
-  // deadlock the model. Emit a hard override so the skill wins.
+  // Proactive stages must NOT render product cards — their skills say so,
+  // but the heavy HTML_INSTRUCTIONS would contradict. Give them a lean
+  // tile-only instruction set instead.
   const PROACTIVE_STAGES = new Set<string>([
     "contextual",
     "reengagement",
     "interjection",
     "new-session",
   ]);
-  const stageOverride = PROACTIVE_STAGES.has(stage)
-    ? `\n\n---\n\n# HARD OVERRIDE FOR STAGE "${stage}"\n\nIn this stage only, IGNORE the "EVERY TIME you mention a product, render it as an HTML product card" rule. This message is a short proactive note — reference products by NAME (plain text or \`**bold**\`) and do not render product cards. You may still use tile/pill buttons (HTML) for quick-reply options. Follow the word count limit from the active skill.`
-    : "";
 
-  // Combine: universal rules + current stage skill + context + accessory data + override + HTML output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}${stageOverride}\n\n---\n\n${HTML_INSTRUCTIONS}`;
+  const outputRules = PROACTIVE_STAGES.has(stage)
+    ? PROACTIVE_HTML_INSTRUCTIONS
+    : HTML_INSTRUCTIONS;
+
+  // Combine: universal rules + current stage skill + context + accessory data + stage-appropriate output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}\n\n---\n\n${outputRules}`;
 }
