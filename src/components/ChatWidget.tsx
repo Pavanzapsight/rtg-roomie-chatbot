@@ -514,19 +514,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     prevAssistantIdRef.current = lastAssistantMessageId;
 
     requestAnimationFrame(() => {
-      const container = scrollContainerRef.current;
       const el = lastAssistantRef.current;
-      if (!container || !el) return;
-
-      // Walk offsetParent chain to get true offset relative to the scroll container
-      let offsetTop = 0;
-      let node: HTMLElement | null = el;
-      while (node && node !== container) {
-        offsetTop += node.offsetTop;
-        node = node.offsetParent as HTMLElement | null;
-      }
-
-      container.scrollTo({ top: offsetTop - container.clientHeight * 0.2, behavior: "smooth" });
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, [lastAssistantMessageId, status]);
 

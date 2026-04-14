@@ -87,6 +87,7 @@ function MessageBubble({
     <div
       ref={!isUser && isLastAssistant ? lastAssistantRef : undefined}
       className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1.5`}
+      style={!isUser && isLastAssistant ? { scrollMarginTop: "12vh" } : undefined}
     >
       {/* Assistant avatar + label */}
       {showAvatar && (
