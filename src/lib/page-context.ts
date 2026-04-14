@@ -52,9 +52,7 @@ function historyArr(v: unknown): BrowsingHistoryEntry[] | undefined {
  * Validates data from the parent page (postMessage) before merging into
  * `window.RTG_CHAT_CONTEXT`. Rejects prototype pollution and oversized values.
  */
-export function sanitizeHostPageContext(
-  raw: unknown
-): (PageContext & { dwellThreshold?: number }) | null {
+export function sanitizeHostPageContext(raw: unknown): PageContext | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
 
@@ -64,13 +62,7 @@ export function sanitizeHostPageContext(
       ? (pageRaw as PageContext["page"])
       : "unknown";
 
-  let dwellThreshold: number | undefined;
-  if (typeof o.dwellThreshold === "number" && Number.isFinite(o.dwellThreshold)) {
-    const t = Math.floor(o.dwellThreshold);
-    if (t >= 0 && t <= 86_400_000) dwellThreshold = t;
-  }
-
-  const out: PageContext & { dwellThreshold?: number } = {
+  const out: PageContext = {
     page,
     productName: str(o.productName),
     productSku: str(o.productSku),
@@ -90,14 +82,6 @@ export function sanitizeHostPageContext(
     purchasedProducts: strArr(o.purchasedProducts),
     browsingHistory: historyArr(o.browsingHistory),
   };
-
-  if (typeof o.dwellSeconds === "number" && Number.isFinite(o.dwellSeconds) && o.dwellSeconds >= 0 && o.dwellSeconds < 86400) {
-    out.dwellSeconds = Math.floor(o.dwellSeconds);
-  }
-
-  if (dwellThreshold !== undefined) {
-    out.dwellThreshold = dwellThreshold;
-  }
 
   return out;
 }

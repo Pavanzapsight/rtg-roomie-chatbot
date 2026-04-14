@@ -14,7 +14,7 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "proactive" | "returning" | "summarize";
+  type?: "chat" | "returning" | "summarize";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
@@ -90,25 +90,6 @@ export async function POST(request: Request) {
               .filter((m) => m.id !== "welcome")
               .map((m) => `${m.role}: ${m.parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("")}`)
               .join("\n")}`,
-          },
-        ],
-      });
-      return result.toUIMessageStreamResponse({
-        onError: () => "Something went wrong.",
-      });
-    }
-
-    if (type === "proactive" && pageContext) {
-      const systemPrompt = buildSystemPrompt(catalogData, "proactive", {
-        pageContext,
-      });
-      const result = streamText({
-        model: openrouter.chat(modelId),
-        system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: `Generate a proactive interjection for: ${JSON.stringify(pageContext)}`,
           },
         ],
       });

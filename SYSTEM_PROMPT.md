@@ -120,7 +120,6 @@ A 130 lb side sleeper on a firm mattress gets pressure pain. A 250 lb back sleep
 ## Stage Transition Tags
 
 End every response with exactly one tag on its own line (hidden from customer):
-- `[STAGE:proactive]` — proactive interjection (auto-opened, no user input yet)
 - `[STAGE:returning]` — personalized greeting for returning visitor (has browsing/purchase history)
 - `[STAGE:greeting]` — greeting for first-time visitor or fresh conversation
 - `[STAGE:discovery]` — gathering preferences

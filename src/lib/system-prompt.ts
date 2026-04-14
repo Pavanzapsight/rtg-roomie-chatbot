@@ -2,7 +2,6 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 export type ConversationStage =
-  | "proactive"
   | "returning"
   | "greeting"
   | "discovery"
@@ -44,7 +43,6 @@ export interface PageContext {
   cartTotal?: string;
   cartCount?: number;
   searchQuery?: string;
-  dwellSeconds?: number;
   pageHistory?: string[];
   purchasedProducts?: string[];
   browsingHistory?: BrowsingHistoryEntry[];
@@ -116,9 +114,6 @@ function buildContextNarrative(
       parts.push("\nUse this history to understand what the customer is comparing and what price range they're exploring. Reference products they've viewed when making recommendations.");
     }
 
-    if (pageContext.dwellSeconds) {
-      parts.push(`\nThe customer has been on this page for about ${pageContext.dwellSeconds} seconds.`);
-    }
   }
 
   if (visitorProfile) {

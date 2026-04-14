@@ -44,8 +44,6 @@ export interface ChatMessage {
 export type { PageContext };
 
 const CHAT_ID = "rtg-roomie-chat";
-const DWELL_THRESHOLD = 30000; // 30 seconds
-
 const welcomeUi: UIMessage = {
   id: "welcome",
   role: "assistant",
@@ -106,7 +104,6 @@ function getPageContext(): PageContext | null {
 export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [hasInterjected, setHasInterjected] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const selectedModel = "gemini-flash-3";
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
@@ -117,7 +114,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const lastAssistantRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const handleSendRef = useRef<(text: string) => void>(undefined);
-  const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visitorProfileRef = useRef(visitorProfile);
   const selectedModelRef = useRef(selectedModel);
   const pageContextRef = useRef(pageContext);
@@ -451,54 +447,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }
 
-  // Proactive interjection: fires after 30s of idle (no user messages)
-  useEffect(() => {
-    if (hasInterjected || !loaded) return;
-
-    const userMessages = messages.filter((m) => m.role === "user");
-    if (userMessages.length > 0) return;
-
-    if (typeof document !== "undefined") {
-      const dismissed = document.cookie.includes("rtg_proactive_dismissed=1");
-      if (dismissed) return;
-    }
-
-    dwellTimerRef.current = setTimeout(async () => {
-      const ctx = pageContextRef.current || getPageContext();
-      if (!ctx) return;
-      ctx.dwellSeconds = Math.round(DWELL_THRESHOLD / 1000);
-
-      setHasInterjected(true);
-
-      if (!isOpenRef.current) {
-        setIsOpen(true);
-      }
-
-      try {
-        requestExtrasRef.current = {
-          type: "proactive",
-          pageContext: ctx,
-        };
-        const chunkStream = await transport.sendMessages({
-          trigger: "submit-message",
-          chatId: CHAT_ID,
-          messageId: undefined,
-          messages: [],
-          abortSignal: new AbortController().signal,
-        });
-        await consumeAssistantStream(chunkStream);
-      } catch {
-        if (!isOpenRef.current) {
-          setMessages([welcomeUi]);
-        }
-      }
-    }, DWELL_THRESHOLD);
-
-    return () => {
-      if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
-    };
-  }, [hasInterjected, loaded, messages, transport, setMessages]);
-
   // Generate personalized greeting for returning visitors when widget opens
   const generateReturningGreeting = useCallback(async () => {
     const profile = loadVisitorProfile();
@@ -686,10 +634,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
-    if (hasInterjected && typeof document !== "undefined") {
-      document.cookie = "rtg_proactive_dismissed=1;path=/;max-age=300";
-    }
-  }, [hasInterjected]);
+  }, []);
 
   return (
     <>
