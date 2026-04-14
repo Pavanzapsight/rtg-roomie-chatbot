@@ -128,13 +128,16 @@ export async function POST(request: Request) {
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
+      // Always append a trigger so the AI generates something — existing
+      // history alone ends with an assistant turn and produces empty output.
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
-        messages: modelMessages.length > 0 ? modelMessages : [
+        messages: [
+          ...modelMessages,
           {
             role: "user",
-            content: "The customer is back after 20 minutes of idle. Generate the re-engagement message.",
+            content: "The customer is back after 20 minutes of idle. Generate the re-engagement message now, following the reengagement skill.",
           },
         ],
       });
@@ -155,10 +158,11 @@ export async function POST(request: Request) {
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
-        messages: modelMessages.length > 0 ? modelMessages : [
+        messages: [
+          ...modelMessages,
           {
             role: "user",
-            content: `The customer just landed on this product page: ${JSON.stringify(pageContext)}. Generate the contextual commentary.`,
+            content: `The customer just landed on the product page for "${pageContext.productName || "a product"}"${pageContext.productPrice ? ` (${pageContext.productPrice})` : ""}. Generate the contextual commentary NOW, following the contextual skill. Keep it under 25 words.`,
           },
         ],
       });
@@ -202,10 +206,11 @@ export async function POST(request: Request) {
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
-        messages: modelMessages.length > 0 ? modelMessages : [
+        messages: [
+          ...modelMessages,
           {
             role: "user",
-            content: `Generate an interjection of type "${interjectionType}". The customer has the chat closed and is browsing.`,
+            content: `Generate an interjection of type "${interjectionType}" NOW, following the interjection skill's "${interjectionType}" sub-template. The customer has been browsing with the chat closed.`,
           },
         ],
       });

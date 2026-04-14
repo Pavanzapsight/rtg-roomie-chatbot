@@ -543,13 +543,22 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
     const assistantId = generateId();
+    let chunkCount = 0;
     try {
       for await (const uiMessage of readUIMessageStream({ stream })) {
+        chunkCount++;
+        const textPreview = uiMessage.parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("")
+          .slice(0, 80);
+        console.log(`[RTG] chunk #${chunkCount}:`, textPreview);
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== assistantId),
           { ...uiMessage, id: assistantId },
         ]);
       }
+      console.log(`[RTG] consumeAssistantStream finished, total chunks: ${chunkCount}`);
     } catch {
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== assistantId),
