@@ -55,20 +55,70 @@ const IFRAME_BRIDGE_SCRIPT = `
     window.parent.postMessage({ type: 'rtg-checkout' }, '*');
   }
 
-  // Auto-resize iframe to fit content — tight, no blank space
+  // Auto-resize iframe to fit content.
+  // Multiple strategies because size changes can happen from many sources
+  // (DOM mutations, image loads, font loads, reflows) and we must never
+  // clip the bottom of the content.
+  function measuredHeight() {
+    var body = document.body;
+    var html = document.documentElement;
+    // Max across body/html variants handles edge cases in paint timing
+    return Math.max(
+      body.scrollHeight || 0,
+      body.offsetHeight || 0,
+      html.scrollHeight || 0,
+      html.offsetHeight || 0
+    );
+  }
+
   function notifyHeight() {
-    // Use body scrollHeight for tightest fit
-    var h = document.body.scrollHeight;
+    // Add a small buffer to avoid sub-pixel rounding clipping the last row
+    var h = measuredHeight() + 8;
     window.parent.postMessage({ type: 'rtg-iframe-resize', height: h }, '*');
   }
 
+  // 1) DOM mutations — catches added/removed/rearranged nodes
   new MutationObserver(notifyHeight).observe(document.body, {
     childList: true, subtree: true, attributes: true
   });
 
+  // 2) ResizeObserver on body — catches size changes from ANY cause
+  //    (image loads, font loads, CSS reflow, flex/grid adjustments).
+  if (typeof ResizeObserver !== 'undefined') {
+    try {
+      new ResizeObserver(function () { notifyHeight(); }).observe(document.body);
+    } catch (_) { /* ignore */ }
+  }
+
+  // 3) window.load — final paint after all external resources
   window.addEventListener('load', notifyHeight);
-  setTimeout(notifyHeight, 10);
-  setTimeout(notifyHeight, 100);
+
+  // 4) Every image fires its own load handler — fixed heights may apply
+  //    slightly later than initial paint on some browsers.
+  function hookImages() {
+    var imgs = document.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      if (img.__rtgHooked) continue;
+      img.__rtgHooked = true;
+      img.addEventListener('load', notifyHeight);
+      img.addEventListener('error', notifyHeight);
+    }
+  }
+  hookImages();
+  new MutationObserver(hookImages).observe(document.body, {
+    childList: true, subtree: true
+  });
+
+  // 5) Font loading — text can reflow after web fonts land
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(notifyHeight).catch(function () {});
+  }
+
+  // 6) Staggered retries to catch anything the observers miss
+  [10, 100, 300, 800, 1500].forEach(function (ms) {
+    setTimeout(notifyHeight, ms);
+  });
 </script>
 `;
 
@@ -203,8 +253,11 @@ export function InlineHTML({ html, id }: InlineHTMLProps) {
     function handleMessage(e: MessageEvent) {
       if (e.data?.type === "rtg-iframe-resize" && iframeRef.current) {
         if (e.source === iframeRef.current.contentWindow) {
-          // Tight fit — add minimal padding
-          setHeight(Math.min(Math.max(e.data.height, 20), 720));
+          // Height must NEVER clip content. Use the iframe's reported value
+          // with a generous max cap. If content exceeds this, the chat
+          // scroll container handles the overflow (outer), not the iframe
+          // (inner) — so no content is hidden.
+          setHeight(Math.min(Math.max(e.data.height, 20), 2000));
         }
       }
     }
