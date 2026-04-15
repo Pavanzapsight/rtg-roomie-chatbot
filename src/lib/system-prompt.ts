@@ -105,16 +105,26 @@ function buildContextNarrative(
       if (pageContext.category) parts.push(`- **Category:** ${pageContext.category}`);
     } else if (pageContext.page === "cart") {
       parts.push(`The customer is on the cart page.`);
-      if (pageContext.cartItems && pageContext.cartItems.length) {
-        parts.push(`- **Cart items:** ${pageContext.cartItems.join("; ")}`);
-        if (pageContext.cartTotal) parts.push(`- **Cart total:** ${pageContext.cartTotal}`);
-      } else {
-        parts.push(`- The cart appears to be empty.`);
-      }
     } else if (pageContext.page === "search" && pageContext.searchQuery) {
       parts.push(`The customer is on search results for: "${pageContext.searchQuery}"`);
     } else if (pageContext.page === "homepage") {
       parts.push(`The customer is on the homepage.`);
+    }
+
+    // ALWAYS show cart status regardless of page type. The customer's cart
+    // is a first-class signal for every recommendation, upsell, and
+    // cross-sell decision. Without this, the AI recommends items already
+    // in the cart because it can't see them.
+    parts.push("\n## SHOPIFY CART STATUS\n");
+    if (pageContext.cartItems && pageContext.cartItems.length > 0) {
+      parts.push("The customer's cart currently contains:");
+      for (const item of pageContext.cartItems) {
+        parts.push(`- ${item}`);
+      }
+      if (pageContext.cartTotal) parts.push(`\n**Cart total:** ${pageContext.cartTotal}`);
+      parts.push("\n**IMPORTANT:** NEVER suggest adding anything that is already in this cart list. When recommending complementary items, mattresses, or accessories, cross-reference this cart and pick something the customer doesn't already have. If the customer asks about a product that's already in their cart, acknowledge it's in their cart rather than pitching it again.");
+    } else {
+      parts.push("The cart is currently empty.");
     }
 
     // Browsing history

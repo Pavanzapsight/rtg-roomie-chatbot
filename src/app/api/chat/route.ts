@@ -235,6 +235,20 @@ export async function POST(request: Request) {
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
+
+      // Build an explicit exclusion list so the AI can't blindly suggest
+      // an accessory the customer already has.
+      const cartList = pageContext?.cartItems && pageContext.cartItems.length > 0
+        ? pageContext.cartItems.join("; ")
+        : "";
+      const exclusionLine = cartList
+        ? `\n\nThe cart already contains: ${cartList}. Do NOT suggest any of these items — pick a DIFFERENT complementary category.`
+        : "";
+
+      // Also tell the AI to scan prior assistant messages with [STAGE:upsell]
+      // in this conversation and avoid repeating those categories.
+      const repeatLine = `\n\nScan your previous assistant messages in this conversation. If you've already suggested a mattress protector, pick a frame / adjustable base / pillow instead. If you've already suggested a frame, pick a pillow / protector / base. Never repeat the same category twice in the same session.`;
+
       const result = streamText({
         model: openrouter.chat(modelId),
         system: systemPrompt,
@@ -242,7 +256,7 @@ export async function POST(request: Request) {
           ...modelMessages,
           {
             role: "user",
-            content: `The customer just added ${pageContext?.productName || "a mattress"} to their cart. Generate ONE short cross-sell suggestion NOW, following the upsell skill. Pick the single best complementary item based on the chat history and current product.`,
+            content: `The customer just added ${pageContext?.productName || "a mattress"} to their cart. Generate ONE short cross-sell suggestion NOW, following the upsell skill. Pick the single best complementary item based on the chat history and current product.${exclusionLine}${repeatLine}`,
           },
         ],
       });

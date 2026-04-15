@@ -142,6 +142,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const triggerInterjectionRef = useRef<(type: string) => void>(undefined);
   const triggerNewSessionGreetingRef = useRef<() => void>(undefined);
   const triggerUpsellRef = useRef<() => void>(undefined);
+  // Pending upsell: set when add-to-cart succeeds, cleared when we fire
+  // the upsell (either on next cart refresh or via fallback timeout).
+  const pendingUpsellRef = useRef<{ at: number; fallback?: ReturnType<typeof setTimeout> } | null>(null);
   const scheduleContextualForPdpRef = useRef<(ctx: PageContext) => void>(undefined);
 
   const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
@@ -328,6 +331,21 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setVisitorProfile(updated);
         }
 
+        // If a pending upsell is waiting and this update includes cart
+        // data (the signal that embed.js fetched the refreshed cart after
+        // the add-to-cart), fire the upsell now — with fresh cart context.
+        if (
+          pendingUpsellRef.current &&
+          Array.isArray(ctx.cartItems) &&
+          ctx.cartItems.length > 0
+        ) {
+          const pending = pendingUpsellRef.current;
+          if (pending.fallback) clearTimeout(pending.fallback);
+          pendingUpsellRef.current = null;
+          // Small settle delay so the pageContext state commit has flushed
+          setTimeout(() => triggerUpsellRef.current?.(), 200);
+        }
+
         // State 2: BROWSING_CHAT_OPEN — contextual product commentary
         scheduleContextualForPdpRef.current?.(ctx);
         return;
@@ -397,12 +415,23 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             parts: [{ type: "text", text: ok ? successText : errorText }],
           },
         ]);
-        // On success, fire a cross-sell/upsell suggestion — capped at 2
-        // per session so we don't overdo it.
+        // On success, schedule a cross-sell/upsell — but wait for the
+        // cart refresh from embed.js before firing, so the AI sees the
+        // item we just added when deciding what to suggest next. The
+        // next rtg-page-context-update (which embed.js sends after
+        // fetchCart completes) will trigger the upsell. 3s fallback
+        // in case the context update is slow or fails.
         if (ok) {
-          setTimeout(() => {
-            triggerUpsellRef.current?.();
-          }, 800);
+          if (pendingUpsellRef.current?.fallback) {
+            clearTimeout(pendingUpsellRef.current.fallback);
+          }
+          const fallback = setTimeout(() => {
+            if (pendingUpsellRef.current) {
+              pendingUpsellRef.current = null;
+              triggerUpsellRef.current?.();
+            }
+          }, 3000);
+          pendingUpsellRef.current = { at: Date.now(), fallback };
         }
         return;
       }
