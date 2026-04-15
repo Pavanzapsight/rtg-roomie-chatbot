@@ -289,7 +289,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         if (data.isNewSession && !data.pendingProduct && !data.isSharedChat) {
           setTimeout(() => {
             triggerNewSessionGreetingRef.current?.();
-          }, 100);
+          }, 2000);
         }
 
         // State 2 on full page load: Shopify themes typically do full page
@@ -808,6 +808,10 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       profile.visitCount > 1 ||
       profile.viewedProducts.length > 0;
     setIsNewSessionPhase(true);
+    // Auto-open the chat so the greeting is actually visible. Otherwise
+    // the stream lands silently inside a closed pill and the visitor
+    // never sees it.
+    setIsOpen(true);
     try {
       if (!hasPriorChat) {
         // New customer: start fresh with no welcome (skill produces the intro)
