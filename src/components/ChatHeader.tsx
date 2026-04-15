@@ -5,12 +5,10 @@ import { RTGLogo } from "./RTGLogo";
 
 export function ChatHeader({
   onMinimize,
-  onClose,
   onRefresh,
   onShare,
 }: {
   onMinimize: () => void;
-  onClose: () => void;
   onRefresh: () => void;
   onShare: () => void;
 }) {
@@ -68,15 +66,9 @@ export function ChatHeader({
           onClick={onMinimize}
           className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/20"
           aria-label="Minimize chat"
+          title="Minimize chat"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M5 12h14" /></svg>
-        </button>
-        <button
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/20"
-          aria-label="Close chat"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
         </button>
       </div>
     </div>

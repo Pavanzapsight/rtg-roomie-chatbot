@@ -910,10 +910,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     handleSendRef.current = handleSend;
   }, [handleSend]);
 
-  const handleClose = useCallback(() => {
-    setIsOpen(false);
-  }, []);
-
   return (
     <>
       {/* Toggle button — Shopping Assistant pill */}
@@ -945,7 +941,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         >
           <ChatHeader
             onMinimize={() => setIsOpen(false)}
-            onClose={handleClose}
             onRefresh={handleRefresh}
             onShare={handleShare}
           />
