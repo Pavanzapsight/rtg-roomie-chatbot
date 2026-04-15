@@ -347,6 +347,7 @@
       setSessionVal("rtg_session_marker", "1");
       setSessionVal("rtg_session_started_at", String(sessionStartedAt));
       setSessionVal("rtg_state3_count", "0");
+      setSessionVal("rtg_last_interjection_at", "0");
     } else {
       sessionStartedAt = parseInt(getSessionVal("rtg_session_started_at") || String(Date.now()), 10);
     }
@@ -710,9 +711,23 @@
     });
 
     // ── State 3 scheduler (BROWSING_CHAT_CLOSED) ──────────────────────
-    var STATE3_THRESHOLDS = [60_000, 180_000, 480_000]; // 1min, 3min, 8min
-    var STATE3_CHECK_INTERVAL = 15_000;
+    // First 3 interjections at 20s / 40s / 60s from the "clock baseline"
+    // (which is either session start or the moment the chat was closed/
+    // minimized). After that, no cap — fire every 2 minutes measured
+    // from the last interjection.
+    var STATE3_THRESHOLDS = [20_000, 40_000, 60_000];
+    var STATE3_RECURRING_GAP_MS = 120_000; // 2 min after the 3rd
+    var STATE3_CHECK_INTERVAL = 5_000;     // tighter so 20s is accurate
     var STATE3_NAV_GUARD_MS = 8_000;
+    var STATE3_LAST_INTERJECTION_KEY = "rtg_last_interjection_at";
+
+    function getLastInterjectionAt() {
+      return parseInt(getSessionVal(STATE3_LAST_INTERJECTION_KEY) || "0", 10);
+    }
+    function setLastInterjectionAt(t) {
+      setSessionVal(STATE3_LAST_INTERJECTION_KEY, String(t));
+    }
+
     var chatIsOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
     var state3Interval = null;
 
@@ -751,13 +766,22 @@
       if (chatIsOpen || !ready) return;
       if (!isSafePageForInterjection()) return; // Skip cart/checkout
       var count = getState3Count();
-      if (count >= 3) { stopState3(); return; }
-      var elapsed = Date.now() - sessionStartedAt;
-      var threshold = STATE3_THRESHOLDS[count];
-      if (elapsed < threshold) return;
+      var now = Date.now();
+
+      // For the first three interjections, use the absolute-from-baseline
+      // threshold (20s, 40s, 60s). After that, require 2 minutes to have
+      // passed since the PREVIOUS interjection (relative pacing). No cap.
+      if (count < STATE3_THRESHOLDS.length) {
+        var elapsed = now - sessionStartedAt;
+        if (elapsed < STATE3_THRESHOLDS[count]) return;
+      } else {
+        var lastAt = getLastInterjectionAt();
+        if (lastAt && (now - lastAt) < STATE3_RECURRING_GAP_MS) return;
+      }
       // Guard: don't interrupt right after a navigation
-      if (Date.now() - lastNavAt < STATE3_NAV_GUARD_MS) return;
+      if (now - lastNavAt < STATE3_NAV_GUARD_MS) return;
       incState3Count();
+      setLastInterjectionAt(now);
       sendToIframe({
         type: "rtg-interjection",
         interjectionType: pickInterjectionType(),

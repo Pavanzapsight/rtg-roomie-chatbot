@@ -218,7 +218,13 @@ export async function POST(request: Request) {
           ...modelMessages,
           {
             role: "user",
-            content: `Generate an interjection of type "${interjectionType}" NOW, following the interjection skill's "${interjectionType}" sub-template. The customer has been browsing with the chat closed.`,
+            content: `Generate an interjection of type "${interjectionType}" NOW, following the interjection skill's "${interjectionType}" sub-template. The customer has been browsing with the chat closed.
+
+IMPORTANT context to weave in:
+- Scan the full chat history above for prior preferences, questions, or pain points the customer mentioned (sleep position, temperature, budget, back pain, partner, etc.). Reference one concrete detail if present.
+- Scan the BROWSING HISTORY section of your system prompt for specific products the customer has viewed during this session. Name the most-relevant one explicitly if it fits the interjection type (especially "compare", "inform", "social", "resume").
+- Scan the SHOPIFY CART STATUS section for what's already in the cart. NEVER re-suggest what they already have.
+- Avoid repeating any category or phrasing you've used in a prior [STAGE:interjection] message in this conversation.`,
           },
         ],
       });

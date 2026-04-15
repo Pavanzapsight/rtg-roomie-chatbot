@@ -19,7 +19,7 @@ import { useCallback, useRef } from "react";
 import type { PageContext } from "@/lib/system-prompt";
 
 export const PROACTIVE_DEBOUNCE_MS = 15_000;
-export const USER_MSG_COOLDOWN_MS = 30_000;
+export const USER_MSG_COOLDOWN_MS = 20_000;
 
 export type ProactiveReason =
   | "new-session"
