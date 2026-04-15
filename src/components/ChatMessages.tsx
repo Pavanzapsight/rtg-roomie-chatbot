@@ -191,7 +191,10 @@ export function ChatMessages({
     <div
       ref={scrollContainerRef}
       className="chat-messages flex-1 overflow-y-auto py-3"
-      style={{ backgroundColor: "var(--rtg-gray-100)" }}
+      style={{
+        backgroundColor: "var(--rtg-gray-100)",
+        overscrollBehavior: "contain",
+      }}
     >
       {messages.map((msg, i) => (
         <MessageBubble

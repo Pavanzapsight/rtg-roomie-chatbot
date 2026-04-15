@@ -50,6 +50,12 @@ body.embed-chat-root {
   background: transparent !important;
   min-height: 100%;
   pointer-events: none;
+  /* Prevent wheel/touch scroll from chaining out of the iframe to the host
+   * page. Without this, scrolling the chat after it auto-opens (State 3) —
+   * or reaching a scroll edge inside the chat — bubbles up and scrolls the
+   * Shopify page instead of the chat. */
+  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 /* Chat bubble animations */
