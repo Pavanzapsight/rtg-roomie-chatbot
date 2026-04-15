@@ -36,6 +36,7 @@ import {
 } from "@/lib/page-context";
 import { useProactiveGuard, type ProactiveReason } from "@/hooks/useProactiveGuard";
 import { useChatState } from "@/hooks/useChatState";
+import { isInComplaintMode } from "@/lib/complaint-detection";
 
 export interface ChatMessage {
   id: string;
@@ -650,14 +651,27 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // new-session greeting is a one-shot init message, not an interruption —
   // it should NOT block State 2's 5s-dwell contextual from firing right
   // after on a PDP landing. Pass `mark: false` to skip the mark.
+  //
+  // Complaint suppression: if the customer is mid-complaint/return, do NOT
+  // fire any proactive trigger. Upsells, interjections, contextual notes,
+  // and re-engagement are all silenced until the AI transitions out of
+  // the complaint stage.
   const gatedFire = useCallback(
     (which: ProactiveReason, mark = true): boolean => {
+      const plainMessages = messages.map((m) => ({
+        role: m.role,
+        text: m.parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join(""),
+      }));
+      if (isInComplaintMode(plainMessages)) return false;
       const result = proactive.canFire(which, pageContextRef.current);
       if (!result.allowed) return false;
       if (mark) proactive.markFired();
       return true;
     },
-    [proactive]
+    [proactive, messages]
   );
 
   // Reusable: schedule a State 2 contextual commentary after the dwell gate.

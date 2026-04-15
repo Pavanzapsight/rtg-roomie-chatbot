@@ -5,9 +5,11 @@ import {
   type VisitorProfile,
   type PageContext,
   type BrowsingHistoryEntry,
+  type ConversationStage,
 } from "@/lib/system-prompt";
 import { getCatalogData, getAccessoryData } from "@/lib/catalog";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
+import { isComplaintMessage } from "@/lib/complaint-detection";
 
 export const maxDuration = 60;
 
@@ -269,7 +271,18 @@ export async function POST(request: Request) {
       role: m.role,
       text: getTextFromUiMessage(m),
     }));
-    const currentStage = inferStage(plainForStage);
+
+    // Complaint override: if the user's latest message contains complaint
+    // signals (return / defect / refund / strong frustration), force the
+    // complaint stage so skills/complaint.md loads immediately — don't
+    // wait for the AI to self-route via the system prompt's override. This
+    // prevents a turn of "recommendation" or "discovery" behavior firing
+    // on top of a complaint message.
+    const lastUser = [...plainForStage].reverse().find((m) => m.role === "user");
+    const userSaidComplaint = lastUser ? isComplaintMessage(lastUser.text) : false;
+    const currentStage: ConversationStage = userSaidComplaint
+      ? "complaint"
+      : inferStage(plainForStage);
     const systemPrompt = buildSystemPrompt(catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
       pageContext: pageContext ?? undefined,

@@ -12,7 +12,8 @@ export type ConversationStage =
   | "contextual"
   | "new-session"
   | "interjection"
-  | "upsell";
+  | "upsell"
+  | "complaint";
 
 export interface VisitorProfile {
   visitCount: number;
@@ -400,6 +401,9 @@ export function buildSystemPrompt(
     "new-session",
     "returning",
     "upsell",
+    // complaint stage must use the lean ruleset — never product cards in
+    // a complaint response; just prose + action tiles.
+    "complaint",
   ]);
 
   const outputRules = PROACTIVE_STAGES.has(stage)

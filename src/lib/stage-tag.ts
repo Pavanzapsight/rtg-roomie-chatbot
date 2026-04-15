@@ -1,6 +1,6 @@
 import type { ConversationStage } from "./system-prompt";
 
-const STAGE_NAMES = "(returning|greeting|discovery|recommendation|comparison|closing|reengagement|contextual|new-session|interjection|upsell)";
+const STAGE_NAMES = "(returning|greeting|discovery|recommendation|comparison|closing|reengagement|contextual|new-session|interjection|upsell|complaint)";
 
 // Transient stages are one-shot proactive/system messages — they should NOT
 // determine what skill loads on the next regular chat turn. After an
