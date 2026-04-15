@@ -513,6 +513,13 @@
           iframe.setAttribute("style", CLOSED_STYLE);
           safeSet(STORAGE.WIDGET_OPEN, "0");
           chatIsOpen = false;
+          // Option A: restart the State 3 schedule from the close moment.
+          // The user explicitly closed — don't pop open again right away
+          // just because the session has already been long enough to meet
+          // a threshold. Next interjection waits from "now" under the same
+          // escalating cadence (1m / 3m / 8m for counts 0 / 1 / 2).
+          sessionStartedAt = Date.now();
+          setSessionVal("rtg_session_started_at", String(sessionStartedAt));
           startState3();
           break;
 
