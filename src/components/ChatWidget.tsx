@@ -532,8 +532,10 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   useEffect(() => {
     if (!lastAssistantMessageId || lastAssistantMessageId === prevAssistantIdRef.current) return;
-    // Only trigger when a brand-new assistant message appears (not on every chunk update)
-    if (status !== "streaming" && status !== "submitted") return;
+    // A brand-new assistant message appeared (the ID check above prevents
+    // re-firing on subsequent streaming chunks of the same message). Scroll
+    // to it regardless of whether it came from useChat.sendMessage, a
+    // proactive transport.sendMessages call, or a direct setMessages inject.
     prevAssistantIdRef.current = lastAssistantMessageId;
 
     requestAnimationFrame(() => {
@@ -541,7 +543,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-  }, [lastAssistantMessageId, status]);
+  }, [lastAssistantMessageId]);
 
   async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
     const assistantId = generateId();
