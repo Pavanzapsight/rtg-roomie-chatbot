@@ -257,6 +257,7 @@ EVERY TIME you mention, recommend, or discuss a specific mattress product, you M
 **Catalog columns you MUST copy exactly for each product (same row):**
 - **Image 1** — full https URL for the hero image (required in every card).
 - **Product Link** — full https URL for the PDP (required for "View product" and image click).
+- **Shopify Variant ID** — numeric Shopify variant id (required for the Add to Cart button — each product row has its own).
 - Sale Price, Regular Price, Theme, Mattress Type, Mattress Size, etc. — use as shown in CATALOG_DATA.
 
 Product card format (replace placeholders with real values from that product's catalog row):
@@ -272,13 +273,14 @@ THREE_BACKTICKS_html
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>View product</button>
-<button type="button" class="btn-cart" onclick="addToCart(SHOPIFY_VARIANT_ID)">🛒 Add to Cart</button>
+<button type="button" class="btn-cart" onclick="addToCart(PASTE_SHOPIFY_VARIANT_ID_FROM_THIS_PRODUCTS_ROW)">🛒 Add to Cart</button>
 </div>
 </div>
 THREE_BACKTICKS
 
 - **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog AND the product name as arguments. Do not invent URLs.
-- If **Shopify variant id** appears in page context, use **addToCart(that numeric id)** on buttons for that on-store product; otherwise use **sendPrompt('Add PRODUCT NAME to cart')** for catalog-only flows.
+- **Add to Cart** button is MANDATORY on EVERY product card — no exceptions. The onclick handler uses THAT PRODUCT ROW'S **Shopify Variant ID** column from CATALOG_DATA. Format: addToCart(NUMERIC_VARIANT_ID). Each card uses ITS OWN variant id from its own row — never reuse the same id across different products.
+- If a catalog row has NO **Shopify Variant ID** (empty cell), use openProduct("PRODUCT_LINK_URL", "PRODUCT NAME") on the Add to Cart button instead — this opens the product page so the customer can add from there. NEVER use sendPrompt('Add X to cart') on the Add to Cart button — that just sends a text message and doesn't actually add to cart.
 - Use the exact **Image 1** URL in the img element's src attribute (optional second image: add another img using **Image 2** if present).
 - For onclick handlers, use single quotes on the outside and double quotes around the URL inside openProduct(...) so URLs stay intact.
 
