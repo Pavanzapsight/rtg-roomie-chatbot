@@ -370,6 +370,29 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         );
         return;
       }
+
+      // Cart action result coming BACK from embed.js after it hit
+      // Shopify's /cart/add.js. Surface a short acknowledgment in the
+      // chat so the customer knows the cart action happened.
+      if (e.data?.type === "rtg-cart-action-result") {
+        const ok = !!e.data.ok;
+        const productName = pageContextRef.current?.productName;
+        const successText = productName
+          ? `✅ Added **${productName}** to your cart!`
+          : "✅ Added to your cart!";
+        const errorText = e.data.error
+          ? `Hmm — couldn't add that to your cart. (${String(e.data.error).slice(0, 80)}) Try the Add to Cart button on the product page.`
+          : "Hmm — couldn't add that to your cart. Try the Add to Cart button on the product page.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: "assistant",
+            parts: [{ type: "text", text: ok ? successText : errorText }],
+          },
+        ]);
+        return;
+      }
       if (e.data?.type === "rtg-checkout") {
         if (!embed || typeof window === "undefined" || window.parent === window) {
           return;

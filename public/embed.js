@@ -603,11 +603,39 @@
                     sendToIframe({ type: MSG_CONTEXT, context: pageContext });
                   }
                 });
+                // Dispatch multiple cart-refresh events covering the
+                // most common Shopify theme conventions. Themes listen
+                // for different names; fire all of them so the cart
+                // drawer/icon refreshes without a full page reload.
+                var cartEvents = [
+                  "cart:updated",
+                  "cart:refresh",
+                  "cart:change",
+                  "cart:rerender",
+                  "shopify:cart:update",
+                  "shopify:section:load",
+                ];
+                cartEvents.forEach(function (name) {
+                  try {
+                    document.documentElement.dispatchEvent(
+                      new CustomEvent(name, { bubbles: true, detail: res.body || {} })
+                    );
+                    document.dispatchEvent(
+                      new CustomEvent(name, { bubbles: true, detail: res.body || {} })
+                    );
+                  } catch (_) { /* older browsers */ }
+                });
+                // Also try the most common theme-defined JS refresh hooks.
                 try {
-                  document.documentElement.dispatchEvent(
-                    new CustomEvent("cart:updated", { bubbles: true })
-                  );
-                } catch (_) { /* older browsers */ }
+                  // Dawn / Online Store 2.0
+                  if (window.Shopify && typeof window.Shopify.onCartUpdate === "function") {
+                    window.Shopify.onCartUpdate(res.body);
+                  }
+                  // CartJS library (used by some themes)
+                  if (window.CartJS && typeof window.CartJS.getCart === "function") {
+                    window.CartJS.getCart();
+                  }
+                } catch (_) { /* ignore */ }
               }
             })
             .catch(function () {
