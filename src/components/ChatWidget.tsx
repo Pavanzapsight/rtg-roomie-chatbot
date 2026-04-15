@@ -579,11 +579,15 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   }, [transport, setMessages]);
 
   // Shared guard gate — every proactive trigger calls this first.
+  // `mark` (default true) advances the 15s stack debounce. State 4's
+  // new-session greeting is a one-shot init message, not an interruption —
+  // it should NOT block State 2's 5s-dwell contextual from firing right
+  // after on a PDP landing. Pass `mark: false` to skip the mark.
   const gatedFire = useCallback(
-    (which: ProactiveReason): boolean => {
+    (which: ProactiveReason, mark = true): boolean => {
       const result = proactive.canFire(which, pageContextRef.current);
       if (!result.allowed) return false;
-      proactive.markFired();
+      if (mark) proactive.markFired();
       return true;
     },
     [proactive]
@@ -685,7 +689,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // no prior chat, messages start from a clean slate. Populates silently —
   // the widget's open/closed state is preserved from the last session.
   const triggerNewSessionGreeting = useCallback(async () => {
-    if (!gatedFire("new-session")) return;
+    // State 4 is a one-shot init greeting; don't mark the 15s debounce so
+    // State 2's contextual can still fire on PDP landings.
+    if (!gatedFire("new-session", false)) return;
     const profile = loadVisitorProfile();
     const hasPriorChat = messages.filter((m) => m.id !== "welcome").length > 0;
     const hasPriorContext =
@@ -742,6 +748,34 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }, 30_000); // check every 30s
     return () => clearInterval(interval);
   }, [IDLE_THRESHOLD_MS]);
+
+  // Iframe-local activity tracking. embed.js pulses activity from the host
+  // page, but interactions INSIDE the chat (scrolling history, typing in
+  // the input, clicking tiles) also count as user activity and should
+  // prevent the 20-minute idle timer from tripping.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    let lastBump = 0;
+    function bump() {
+      const now = Date.now();
+      if (now - lastBump < 2000) return; // throttle to 1 bump per 2s
+      lastBump = now;
+      const wasIdle = isIdleRef.current;
+      isIdleRef.current = false;
+      lastActivityAtRef.current = now;
+      // Mirror the rtg-activity handler's re-engagement trigger so
+      // iframe-originated activity can also wake up a State 1 fire.
+      if (wasIdle && !reengagementFiredRef.current && isOpenRef.current) {
+        reengagementFiredRef.current = true;
+        triggerReengagementRef.current?.();
+      }
+    }
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
+    events.forEach((evt) => document.addEventListener(evt, bump, { passive: true }));
+    return () => {
+      events.forEach((evt) => document.removeEventListener(evt, bump));
+    };
+  }, []);
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);

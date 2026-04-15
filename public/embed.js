@@ -327,8 +327,21 @@
     function setSessionVal(k, v) {
       try { sessionStorage.setItem(k, v); } catch (_) { /* noop */ }
     }
+    // Sessions are bounded — if the tab has been open for more than 6
+    // hours (browser left idle overnight, etc.), treat it as a new
+    // session. Otherwise State 3's interjection thresholds (1m / 3m / 8m
+    // from sessionStartedAt) would all be "already exceeded" and fire
+    // immediately on any interaction.
+    var MAX_SESSION_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
     var isNewSession = !getSessionVal("rtg_session_marker");
     var sessionStartedAt;
+    if (!isNewSession) {
+      var existingStartedAt = parseInt(getSessionVal("rtg_session_started_at") || "0", 10);
+      if (!existingStartedAt || (Date.now() - existingStartedAt) > MAX_SESSION_AGE_MS) {
+        // Session went stale — reset as if it were a new session.
+        isNewSession = true;
+      }
+    }
     if (isNewSession) {
       sessionStartedAt = Date.now();
       setSessionVal("rtg_session_marker", "1");
