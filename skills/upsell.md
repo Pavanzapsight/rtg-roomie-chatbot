@@ -11,15 +11,17 @@ Every response has TWO parts, in this exact order:
 
 ## Pick ONE item based on signals
 
-Scan the chat history and the current product. Pick the single most relevant suggestion:
+Scan the chat history and the current product. Pick the single most relevant suggestion. Pick from the ACCESSORY CATALOG section of your prompt (which has rows tagged by Category).
 
-| Customer signal | Suggest |
+| Customer signal | Suggest (Category) |
 |-----------------|---------|
-| Back pain / lumbar issue | Adjustable base |
-| Runs hot / cooling priority | Cooling mattress protector or cooling pillows |
-| Couple / partner | Pair of different-firmness pillows |
-| New home / starting fresh | Mattress protector + frame |
-| No clear signal | Mattress protector (warranty protection angle) |
+| Back pain / lumbar issue | Adjustable base (ADJUSTABLE_BASE) |
+| Runs hot / cooling priority | Ver-Tex protector or Night Ice pillow (PROTECTOR / PILLOW) |
+| Couple / partner | Two pillows at matched lofts (PILLOW) |
+| New home / starting fresh | Mattress protector + frame (PROTECTOR, then FRAME) |
+| No clear signal | Mattress protector — warranty protection angle (PROTECTOR) |
+
+Every suggestion uses the real catalog row (SKU, price, Shopify Variant ID from the same Upload sheet) — never fabricate.
 
 Default to **mattress protector** when in doubt — it's the highest-attach-rate accessory and preserves warranty.
 
