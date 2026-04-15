@@ -40,7 +40,7 @@ Always track which categories the customer has already seen so you never repeat 
 1. **Mattress Protection** — protects the mattress and keeps the warranty valid
 2. **Pillows** — matched to their sleep position for proper neck alignment
 3. **Mattress Cover** — adds a layer of comfort and extends mattress life (use protector products from catalog, position as a cover/comfort layer)
-4. **Adjustable Base** — now in the accessory catalog (BaseLogic Silver, BaseLogic Platinum, etc.). Reference by name/brand/price. Product links are not yet populated, so direct the customer to call customer care or visit a store to complete the purchase; do NOT render a View Product or Add to Cart button for adjustable bases until links are in the catalog
+4. **Adjustable Base** — not currently in catalog; mention it as available in-store or at RoomsToGo.com if relevant
 
 ### Starting priority — which category to lead with
 
@@ -155,7 +155,7 @@ The four categories in full order:
 1. Mattress Protection (always first unless a specific signal overrides)
 2. Pillows
 3. Mattress Cover (position as comfort + protection layer)
-4. Adjustable Base (catalog has BaseLogic Silver / Platinum with prices; mention by name/price but do not render a product card — no product link yet; direct customer to call/visit to complete)
+4. Adjustable Base (mention as in-store / RoomsToGo.com — no catalog card available)
 
 Never show a category twice. Track what's been shown in the conversation.
 

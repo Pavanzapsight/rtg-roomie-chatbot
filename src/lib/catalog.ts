@@ -35,7 +35,7 @@ export function getAccessoryData(): string {
   type Row = (string | number | null)[];
   const rows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, defval: null }) as Row[];
 
-  const RELEVANT = new Set(["MATTRESS PROTECTORS", "PILLOWS", "Adjustable Base"]);
+  const RELEVANT = new Set(["MATTRESS PROTECTORS", "PILLOWS"]);
   let currentCat = "";
   const sections: Record<string, string[]> = {};
 
@@ -88,20 +88,6 @@ export function getAccessoryData(): string {
     out.push("Casper Snow: Temperature-managed foam at mid price point.");
     out.push("");
     out.push(...sections["PILLOWS"]);
-    out.push("");
-  }
-
-  if (sections["Adjustable Base"]?.length) {
-    out.push("## ADJUSTABLE BASES");
-    out.push("Best suggested when customer has back pain, hip pain, reflux, snoring, or wants lifestyle upgrade (reading, TV, elevated legs).");
-    out.push("Tier guide:");
-    out.push("- BaseLogic Silver: Entry-level adjustable — head/foot articulation.");
-    out.push("- BaseLogic Platinum: Mid-tier — adds massage, USB, and wireless remote.");
-    out.push("- Match size to the customer's mattress size.");
-    out.push("");
-    out.push("NOTE: Adjustable Base rows do NOT yet have a clickable product link in the catalog. Do NOT fabricate a URL. When suggesting an adjustable base, reference it by name/brand/price and direct the customer to call customer care or visit a store to complete the purchase — do NOT render a product card with a View Product / Add to Cart button for adjustable bases.");
-    out.push("");
-    out.push(...sections["Adjustable Base"]);
   }
 
   cachedAccessories = out.join("\n");
