@@ -769,32 +769,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // history, the greeting is APPENDED (history stays). For new customers with
   // no prior chat, messages start from a clean slate. Populates silently —
   // the widget's open/closed state is preserved from the last session.
-  // Post-Add-to-Cart upsell. Capped at 2 per session via sessionStorage
-  // (falls back to a ref-based in-memory count if sessionStorage is blocked).
-  const UPSELL_MAX_PER_SESSION = 2;
-  const UPSELL_COUNT_KEY = "rtg_upsell_count";
-  const upsellCountFallbackRef = useRef(0);
-
-  function getUpsellCount(): number {
-    try {
-      const raw = sessionStorage.getItem(UPSELL_COUNT_KEY);
-      return raw ? parseInt(raw, 10) : 0;
-    } catch {
-      return upsellCountFallbackRef.current;
-    }
-  }
-  function incUpsellCount() {
-    const next = getUpsellCount() + 1;
-    try {
-      sessionStorage.setItem(UPSELL_COUNT_KEY, String(next));
-    } catch {
-      upsellCountFallbackRef.current = next;
-    }
-  }
-
+  // Post-Add-to-Cart upsell — no lifetime cap. Every successful add triggers
+  // a cross-sell OR wrap-up response so the conversation never hangs after
+  // "Added to cart". The upsell skill handles fatigue via category-tracking
+  // (never repeat a category, never suggest what's already in the cart).
   const triggerUpsell = useCallback(async () => {
     if (humanMode) return;
-    if (getUpsellCount() >= UPSELL_MAX_PER_SESSION) return;
     // Don't mark the stack debounce — we just appended the ack message and
     // want this upsell to follow right after. Still respect cart/checkout
     // and streaming guards in canFire.
@@ -811,7 +791,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         messages: messages,
         abortSignal: new AbortController().signal,
       });
-      incUpsellCount();
       await consumeAssistantStream(chunkStream);
     } catch {
       /* swallow — upsell is best-effort */
