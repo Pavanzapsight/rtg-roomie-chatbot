@@ -11,7 +11,8 @@ export type ConversationStage =
   | "reengagement"
   | "contextual"
   | "new-session"
-  | "interjection";
+  | "interjection"
+  | "upsell";
 
 export interface VisitorProfile {
   visitCount: number;
@@ -388,6 +389,7 @@ export function buildSystemPrompt(
     "interjection",
     "new-session",
     "returning",
+    "upsell",
   ]);
 
   const outputRules = PROACTIVE_STAGES.has(stage)

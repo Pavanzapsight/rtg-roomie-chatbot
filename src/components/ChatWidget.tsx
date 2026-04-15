@@ -141,6 +141,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const triggerReengagementRef = useRef<() => void>(undefined);
   const triggerInterjectionRef = useRef<(type: string) => void>(undefined);
   const triggerNewSessionGreetingRef = useRef<() => void>(undefined);
+  const triggerUpsellRef = useRef<() => void>(undefined);
   const scheduleContextualForPdpRef = useRef<(ctx: PageContext) => void>(undefined);
 
   const IDLE_THRESHOLD_MS = 20 * 60 * 1000;      // 20 minutes
@@ -391,6 +392,13 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             parts: [{ type: "text", text: ok ? successText : errorText }],
           },
         ]);
+        // On success, fire a cross-sell/upsell suggestion — capped at 2
+        // per session so we don't overdo it.
+        if (ok) {
+          setTimeout(() => {
+            triggerUpsellRef.current?.();
+          }, 800);
+        }
         return;
       }
       if (e.data?.type === "rtg-checkout") {
@@ -713,6 +721,55 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // history, the greeting is APPENDED (history stays). For new customers with
   // no prior chat, messages start from a clean slate. Populates silently —
   // the widget's open/closed state is preserved from the last session.
+  // Post-Add-to-Cart upsell. Capped at 2 per session via sessionStorage
+  // (falls back to a ref-based in-memory count if sessionStorage is blocked).
+  const UPSELL_MAX_PER_SESSION = 2;
+  const UPSELL_COUNT_KEY = "rtg_upsell_count";
+  const upsellCountFallbackRef = useRef(0);
+
+  function getUpsellCount(): number {
+    try {
+      const raw = sessionStorage.getItem(UPSELL_COUNT_KEY);
+      return raw ? parseInt(raw, 10) : 0;
+    } catch {
+      return upsellCountFallbackRef.current;
+    }
+  }
+  function incUpsellCount() {
+    const next = getUpsellCount() + 1;
+    try {
+      sessionStorage.setItem(UPSELL_COUNT_KEY, String(next));
+    } catch {
+      upsellCountFallbackRef.current = next;
+    }
+  }
+
+  const triggerUpsell = useCallback(async () => {
+    if (humanMode) return;
+    if (getUpsellCount() >= UPSELL_MAX_PER_SESSION) return;
+    // Don't mark the stack debounce — we just appended the ack message and
+    // want this upsell to follow right after. Still respect cart/checkout
+    // and streaming guards in canFire.
+    if (!gatedFire("new-session", false)) return; // reuse as a light gate
+    try {
+      requestExtrasRef.current = {
+        type: "upsell",
+        pageContext: pageContextRef.current,
+      };
+      const chunkStream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: CHAT_ID,
+        messageId: undefined,
+        messages: messages,
+        abortSignal: new AbortController().signal,
+      });
+      incUpsellCount();
+      await consumeAssistantStream(chunkStream);
+    } catch {
+      /* swallow — upsell is best-effort */
+    }
+  }, [transport, messages, humanMode, gatedFire]);
+
   const triggerNewSessionGreeting = useCallback(async () => {
     // State 4 is a one-shot init greeting; don't mark the 15s debounce so
     // State 2's contextual can still fire on PDP landings.
@@ -755,6 +812,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   useEffect(() => { triggerReengagementRef.current = triggerReengagement; }, [triggerReengagement]);
   useEffect(() => { triggerInterjectionRef.current = triggerInterjection; }, [triggerInterjection]);
   useEffect(() => { triggerNewSessionGreetingRef.current = triggerNewSessionGreeting; }, [triggerNewSessionGreeting]);
+  useEffect(() => { triggerUpsellRef.current = triggerUpsell; }, [triggerUpsell]);
   useEffect(() => { scheduleContextualForPdpRef.current = scheduleContextualForPdp; }, [scheduleContextualForPdp]);
 
   // Periodic check: if 20 minutes pass with no activity pulse, mark IDLE.

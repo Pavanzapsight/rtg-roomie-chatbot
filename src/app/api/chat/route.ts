@@ -14,7 +14,7 @@ export const maxDuration = 60;
 type ChatRequestBody = {
   id?: string;
   messages: UIMessage[];
-  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual" | "new-session" | "interjection";
+  type?: "chat" | "returning" | "summarize" | "reengagement" | "contextual" | "new-session" | "interjection" | "upsell";
   interjectionType?: "compare" | "inform" | "guide" | "social" | "resume";
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
@@ -217,6 +217,32 @@ export async function POST(request: Request) {
           {
             role: "user",
             content: `Generate an interjection of type "${interjectionType}" NOW, following the interjection skill's "${interjectionType}" sub-template. The customer has been browsing with the chat closed.`,
+          },
+        ],
+      });
+      return result.toUIMessageStreamResponse({
+        onError: () => "Something went wrong.",
+      });
+    }
+
+    // Post-Add-to-Cart cross-sell. Fires after a successful cart action.
+    // Uses the upsell skill — one short suggestion + tiles. Capped at 2
+    // invocations per session by the client.
+    if (type === "upsell") {
+      const systemPrompt = buildSystemPrompt(catalogData, "upsell", {
+        visitorProfile: visitorProfile ?? undefined,
+        pageContext: pageContext ?? undefined,
+      });
+      const sanitized = sanitizeForModel(messages);
+      const modelMessages = await convertToModelMessages(sanitized);
+      const result = streamText({
+        model: openrouter.chat(modelId),
+        system: systemPrompt,
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: `The customer just added ${pageContext?.productName || "a mattress"} to their cart. Generate ONE short cross-sell suggestion NOW, following the upsell skill. Pick the single best complementary item based on the chat history and current product.`,
           },
         ],
       });
