@@ -58,22 +58,24 @@ const IFRAME_BRIDGE_SCRIPT = `
   // Auto-resize iframe to fit content.
   // Multiple strategies because size changes can happen from many sources
   // (DOM mutations, image loads, font loads, reflows) and we must never
-  // clip the bottom of the content.
+  // clip the bottom of the content — but also never add visible padding.
   function measuredHeight() {
-    var body = document.body;
-    var html = document.documentElement;
-    // Max across body/html variants handles edge cases in paint timing
+    // Body-only measurement avoids html.* variance (margin/outer chrome).
+    // Max of scroll+offset handles edge cases where one is 0 during paint.
     return Math.max(
-      body.scrollHeight || 0,
-      body.offsetHeight || 0,
-      html.scrollHeight || 0,
-      html.offsetHeight || 0
+      document.body.scrollHeight || 0,
+      document.body.offsetHeight || 0
     );
   }
 
+  var _lastSent = 0;
   function notifyHeight() {
-    // Add a small buffer to avoid sub-pixel rounding clipping the last row
-    var h = measuredHeight() + 8;
+    // +2px buffer — enough for true sub-pixel rounding, not visible.
+    var h = measuredHeight() + 2;
+    // Skip redundant posts when nothing actually changed, and debounce
+    // tiny fluctuations (<=1px) that can fire during layout flickers.
+    if (Math.abs(h - _lastSent) < 2) return;
+    _lastSent = h;
     window.parent.postMessage({ type: 'rtg-iframe-resize', height: h }, '*');
   }
 
@@ -136,7 +138,7 @@ const IFRAME_BASE_STYLES = `
     /* No extra space */
     height: auto;
   }
-  body { padding: 2px 0; }
+  body { padding: 0; }
 
   /* Default pill/chip styles */
   .pill, .chip, [data-prompt] {
@@ -280,7 +282,7 @@ ${IFRAME_BRIDGE_SCRIPT}
       srcDoc={srcdoc}
       sandbox="allow-scripts"
       title={`Interactive content ${id}`}
-      className="my-1 w-full border-0"
+      className="my-0.5 w-full border-0"
       style={{
         height: `${height}px`,
         background: "transparent",
