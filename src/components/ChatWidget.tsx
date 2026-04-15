@@ -257,8 +257,13 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           lastContextualAtRef.current = Date.now();
           setIsOpen(true);
           setTimeout(() => {
+            // Natural phrasing — how an actual customer would ask about the
+            // product they just clicked. The AI already has the conversation
+            // history and knows to include Add-to-Cart / Compare tiles for
+            // product responses (per recommendation skill), so we don't need
+            // robotic instructions in the user message.
             handleSendRef.current?.(
-              `I just clicked on ${data.pendingProduct.productName}. Give me a quick summary of why this is a good fit for me based on our conversation. Then show me action buttons for Add to Cart and Compare with other options.`
+              `Tell me more about the ${data.pendingProduct.productName}`
             );
           }, 800);
         }
