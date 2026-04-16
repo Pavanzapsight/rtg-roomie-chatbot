@@ -60,6 +60,18 @@ export interface PageContext {
   browsingHistory?: BrowsingHistoryEntry[];
 }
 
+/** IP-inferred customer location, provided by Vercel's edge headers on
+ *  every request. All fields are optional — on localhost and some
+ *  preview builds the headers are absent. */
+export interface CustomerLocation {
+  city?: string;
+  region?: string;   // state / province code, e.g. "GA"
+  country?: string;  // ISO code, e.g. "US"
+  latitude?: string;
+  longitude?: string;
+  timezone?: string;
+}
+
 const cache: Record<string, string> = {};
 
 function loadFile(relativePath: string): string {
@@ -356,6 +368,29 @@ THREE_BACKTICKS
 Output format: three backticks + html → HTML → three closing backticks. Products = ALWAYS cards. Tiles = ALWAYS multi-select with Submit (except sleep position and post-product actions).
 `.replaceAll("THREE_BACKTICKS_html", "```html").replaceAll("THREE_BACKTICKS", "```");
 
+/** Render a compact CUSTOMER LOCATION block when any geo field is present.
+ *  Returns "" when the location is entirely missing (localhost, preview,
+ *  Vercel-bypassed request) so the prompt isn't bloated with empty fields. */
+function buildCustomerLocationBlock(loc?: CustomerLocation): string {
+  if (!loc) return "";
+  const hasAny = loc.city || loc.region || loc.country || loc.latitude || loc.longitude || loc.timezone;
+  if (!hasAny) return "";
+  const lines: string[] = ["\n\n---\n\n# CUSTOMER LOCATION (approximate, IP-inferred)\n"];
+  if (loc.city) lines.push(`- **City:** ${loc.city}`);
+  if (loc.region) lines.push(`- **State/Region:** ${loc.region}`);
+  if (loc.country) lines.push(`- **Country:** ${loc.country}`);
+  if (loc.timezone) lines.push(`- **Timezone:** ${loc.timezone}`);
+  if (loc.latitude && loc.longitude) {
+    lines.push(`- **Coordinates:** ${loc.latitude}, ${loc.longitude}`);
+  }
+  lines.push(
+    "",
+    "This is approximate — IP geolocation may be off for VPN users or in dense metro areas.",
+    "**Only reference this when relevant** (see Store & Location Handling rule in the universal prompt). Do NOT mention location unprompted."
+  );
+  return lines.join("\n");
+}
+
 export function buildSystemPrompt(
   catalogData: string,
   stage: ConversationStage,
@@ -364,6 +399,7 @@ export function buildSystemPrompt(
     visitorProfile?: VisitorProfile;
     accessoryData?: string;
     interjectionType?: string;
+    customerLocation?: CustomerLocation;
   }
 ): string {
   // Load universal rules
@@ -412,6 +448,8 @@ export function buildSystemPrompt(
     ? PROACTIVE_HTML_INSTRUCTIONS
     : HTML_INSTRUCTIONS;
 
-  // Combine: universal rules + current stage skill + context + accessory data + stage-appropriate output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}\n\n---\n\n${outputRules}`;
+  const locationBlock = buildCustomerLocationBlock(options?.customerLocation);
+
+  // Combine: universal rules + current stage skill + context + accessory data + location + stage-appropriate output rules
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}${locationBlock}\n\n---\n\n${outputRules}`;
 }

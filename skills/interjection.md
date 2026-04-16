@@ -106,7 +106,7 @@ That one's a customer favorite — want to see what shoppers pair it with?
 
 ## Sub-template: `resume`
 
-Fires when 2+ prior user messages exist (rich chat history). Pull them back softly.
+Fires when 2+ prior user messages exist (rich chat history). Pull them back softly. **Use 5 tiles** for this sub-template — include real-world help options (store visit and agent handoff) since the customer has been dithering and may benefit from offline nudges.
 
 ---START EXAMPLE `resume`---
 
@@ -117,6 +117,8 @@ Still weighing the **Beautyrest Harmony**? I'm here whenever you're ready to dec
 <button class="pill" onclick="sendPrompt('Yes, lets continue')">✅ Yes, continue</button>
 <button class="pill" onclick="sendPrompt('Start fresh')">🔄 Start fresh</button>
 <button class="pill" onclick="sendPrompt('Just browsing')">👋 Just browsing</button>
+<button class="pill" onclick="sendPrompt('Find me the nearest Rooms To Go store')">🏬 Visit in store</button>
+<button class="pill" onclick="sendPrompt('Talk to an agent')">💬 Talk to agent</button>
 </div>
 (three backticks)
 

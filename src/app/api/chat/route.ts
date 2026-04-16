@@ -6,6 +6,7 @@ import {
   type PageContext,
   type BrowsingHistoryEntry,
   type ConversationStage,
+  type CustomerLocation,
 } from "@/lib/system-prompt";
 import { getCatalogData, getAccessoryData } from "@/lib/catalog";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
@@ -39,6 +40,29 @@ function getTextFromUiMessage(m: UIMessage): string {
     .join("");
 }
 
+/** Pulls IP-inferred geolocation from Vercel's edge headers. Returns
+ *  undefined when NO geo field is present (localhost, previews, bypassed
+ *  requests) so the system prompt doesn't render an empty block. Vercel
+ *  URL-encodes city names (e.g. "New%20York") so we decode defensively. */
+function extractCustomerLocation(headers: Headers): CustomerLocation | undefined {
+  const get = (k: string): string | undefined => {
+    const v = headers.get(k);
+    if (!v) return undefined;
+    try { return decodeURIComponent(v).trim() || undefined; }
+    catch { return v.trim() || undefined; }
+  };
+  const loc: CustomerLocation = {
+    city: get("x-vercel-ip-city"),
+    region: get("x-vercel-ip-country-region"),
+    country: get("x-vercel-ip-country"),
+    latitude: get("x-vercel-ip-latitude"),
+    longitude: get("x-vercel-ip-longitude"),
+    timezone: get("x-vercel-ip-timezone"),
+  };
+  const hasAny = loc.city || loc.region || loc.country || loc.latitude || loc.longitude || loc.timezone;
+  return hasAny ? loc : undefined;
+}
+
 function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
   return messages
     .filter((m) => m.id !== "welcome")
@@ -65,6 +89,12 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as ChatRequestBody;
   const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model, interjectionType } = body;
+
+  // IP-inferred geolocation from Vercel edge headers (free, no external call).
+  // Flows through every buildSystemPrompt call so the AI knows the customer's
+  // approximate city when relevant store/visit questions come up. Absent on
+  // localhost and some previews — handled as a no-op downstream.
+  const customerLocation = extractCustomerLocation(request.headers);
 
   // Merge browsing history into page context so it reaches the system prompt
   const pageContext: PageContext | undefined = rawPageContext
@@ -105,6 +135,7 @@ export async function POST(request: Request) {
       const systemPrompt = buildSystemPrompt(catalogData, "returning", {
         visitorProfile,
         pageContext: pageContext ?? undefined,
+        customerLocation,
       });
       // Include prior chat history (if any) so the AI can reference the
       // last topic. Always append a trigger message so the AI generates
@@ -133,6 +164,7 @@ export async function POST(request: Request) {
       const systemPrompt = buildSystemPrompt(catalogData, "reengagement", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
+        customerLocation,
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
@@ -185,6 +217,7 @@ export async function POST(request: Request) {
       const systemPrompt = buildSystemPrompt(catalogData, "new-session", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
+        customerLocation,
       });
       const result = streamText({
         model: openrouter.chat(modelId),
@@ -207,6 +240,7 @@ export async function POST(request: Request) {
       const systemPrompt = buildSystemPrompt(catalogData, "interjection", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
+        customerLocation,
         interjectionType,
       });
       const sanitized = sanitizeForModel(messages);
@@ -240,6 +274,7 @@ IMPORTANT context to weave in:
       const systemPrompt = buildSystemPrompt(catalogData, "upsell", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
+        customerLocation,
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
@@ -292,6 +327,7 @@ IMPORTANT context to weave in:
     const systemPrompt = buildSystemPrompt(catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
       pageContext: pageContext ?? undefined,
+      customerLocation,
       accessoryData: currentStage === "closing" ? getAccessoryData() : undefined,
     });
 
