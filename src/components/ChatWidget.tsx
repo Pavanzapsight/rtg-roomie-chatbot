@@ -708,8 +708,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   }, [CONTEXTUAL_COOLDOWN_MS, CONTEXTUAL_DWELL_MS]);
 
   // State 2: Fire contextual product commentary. Routed through the guard.
+  // Event-driven (user just landed on a PDP), so it bypasses the 15s
+  // stack-debounce. Its own CONTEXTUAL_COOLDOWN_MS (30s, enforced in
+  // scheduleContextualForPdp) is the right guard against repetition.
   const triggerContextual = useCallback(async () => {
-    if (!gatedFire("contextual")) return;
+    if (!gatedFire("contextual", true, { bypassDebounce: true })) return;
     try {
       requestExtrasRef.current = {
         type: "contextual",
@@ -723,8 +726,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         abortSignal: new AbortController().signal,
       });
       await consumeAssistantStream(chunkStream);
-    } catch {
-      /* swallow — contextual is best-effort */
+    } catch (err) {
+      console.log("[proactive] contextual API call failed:", err);
     }
   }, [transport, messages, gatedFire]);
 
