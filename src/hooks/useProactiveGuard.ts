@@ -25,7 +25,16 @@ export type ProactiveReason =
   | "new-session"
   | "interjection"
   | "contextual"
-  | "reengagement";
+  | "reengagement"
+  | "upsell";
+
+export interface CanFireOptions {
+  /** Bypass the 15s stack-debounce. Use for event-driven triggers like
+   *  post-Add-to-Cart upsell, which respond to an explicit user commitment
+   *  and shouldn't be swallowed just because another proactive fired
+   *  moments earlier. */
+  bypassDebounce?: boolean;
+}
 
 export interface ProactiveGuardResult {
   allowed: boolean;
@@ -46,7 +55,11 @@ export function useProactiveGuard({
 
   /** Check if firing a proactive message is currently allowed. */
   const canFire = useCallback(
-    (which: ProactiveReason, ctx: PageContext | null): ProactiveGuardResult => {
+    (
+      which: ProactiveReason,
+      ctx: PageContext | null,
+      options: CanFireOptions = {}
+    ): ProactiveGuardResult => {
       if (humanMode) return { allowed: false, reason: "human-mode" };
       if (isStreaming) return { allowed: false, reason: "streaming" };
 
@@ -60,15 +73,19 @@ export function useProactiveGuard({
       }
 
       // Rule: Never stack — debounce 15s since last proactive
+      // (upsell opts out: it's an event-driven response to Add-to-Cart,
+      //  not an unsolicited interruption)
       const now = Date.now();
-      if (now - lastProactiveAtRef.current < PROACTIVE_DEBOUNCE_MS) {
-        return { allowed: false, reason: "stack-debounce" };
+      if (!options.bypassDebounce) {
+        if (now - lastProactiveAtRef.current < PROACTIVE_DEBOUNCE_MS) {
+          return { allowed: false, reason: "stack-debounce" };
+        }
       }
 
       // Rule: Don't interrupt active conversation — 30s after user msg
       if (now - lastUserActivityAtRef.current < USER_MSG_COOLDOWN_MS) {
-        // new-session gets a pass (it's fired once, very early)
-        if (which !== "new-session") {
+        // new-session and upsell get a pass (event-driven, not periodic)
+        if (which !== "new-session" && which !== "upsell") {
           return { allowed: false, reason: "conversation-cooldown" };
         }
       }

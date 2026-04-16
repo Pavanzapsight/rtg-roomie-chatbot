@@ -657,7 +657,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // and re-engagement are all silenced until the AI transitions out of
   // the complaint stage.
   const gatedFire = useCallback(
-    (which: ProactiveReason, mark = true): boolean => {
+    (
+      which: ProactiveReason,
+      mark = true,
+      options: { bypassDebounce?: boolean } = {}
+    ): boolean => {
       const plainMessages = messages.map((m) => ({
         role: m.role,
         text: m.parts
@@ -665,9 +669,15 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           .map((p) => p.text)
           .join(""),
       }));
-      if (isInComplaintMode(plainMessages)) return false;
-      const result = proactive.canFire(which, pageContextRef.current);
-      if (!result.allowed) return false;
+      if (isInComplaintMode(plainMessages)) {
+        console.log(`[proactive] ${which} skipped: complaint-mode`);
+        return false;
+      }
+      const result = proactive.canFire(which, pageContextRef.current, options);
+      if (!result.allowed) {
+        console.log(`[proactive] ${which} skipped: ${result.reason}`);
+        return false;
+      }
       if (mark) proactive.markFired();
       return true;
     },
@@ -775,10 +785,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   // (never repeat a category, never suggest what's already in the cart).
   const triggerUpsell = useCallback(async () => {
     if (humanMode) return;
-    // Don't mark the stack debounce — we just appended the ack message and
-    // want this upsell to follow right after. Still respect cart/checkout
-    // and streaming guards in canFire.
-    if (!gatedFire("new-session", false)) return; // reuse as a light gate
+    // Event-driven: fires right after the user's Add-to-Cart commitment.
+    // Bypass the 15s stack-debounce (a contextual commentary fired moments
+    // earlier would otherwise swallow this), but keep cart/checkout,
+    // streaming, and complaint guards.
+    if (!gatedFire("upsell", false, { bypassDebounce: true })) return;
     try {
       requestExtrasRef.current = {
         type: "upsell",
@@ -792,8 +803,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         abortSignal: new AbortController().signal,
       });
       await consumeAssistantStream(chunkStream);
-    } catch {
-      /* swallow — upsell is best-effort */
+    } catch (err) {
+      console.log("[proactive] upsell API call failed:", err);
     }
   }, [transport, messages, humanMode, gatedFire]);
 
