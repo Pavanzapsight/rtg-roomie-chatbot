@@ -155,6 +155,20 @@ function FormattedMessage({
             <Streamdown
               mode={isStreaming ? "streaming" : "static"}
               parseIncompleteMarkdown={isStreaming}
+              linkSafety={{ enabled: false }}
+              components={{
+                a: ({ href, children, ...rest }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "var(--rtg-blue)", textDecoration: "underline" }}
+                    {...rest}
+                  >
+                    {children}
+                  </a>
+                ),
+              }}
             >
               {seg.content}
             </Streamdown>
