@@ -5,9 +5,9 @@ import { parseExcelBuffer } from "./excel-parser";
 /**
  * Single source of truth: the `Upload sheet` in `updated rtg.xlsx`.
  *
- * Every product — mattresses, adjustable bases, pillows, protectors, frames —
+ * Every product — mattresses, lifestyle bases, pillows, protectors, sheets —
  * lives in this one sheet, each row categorized via the `Category` column
- * (MATTRESS / ADJUSTABLE_BASE / PILLOW / PROTECTOR / FRAME). Every row with a
+ * (MATTRESS / LIFESTYLE_BASE / PILLOW / PROTECTOR / SHEETS). Every row with a
  * Product Link also has a `Shopify Variant ID` extracted from the URL so
  * Add-to-Cart works uniformly for any category.
  */
@@ -35,10 +35,10 @@ export function getCatalogData(): string {
  * during the closing / upsell stages so the prompt gets cross-sell context
  * without re-reading the full mattress table.
  *
- * Groups rows by the `Category` column and outputs readable sections for
- * PROTECTOR, PILLOW, FRAME, ADJUSTABLE_BASE. Each row carries the same
- * Shopify Variant ID from the Upload sheet, so Add-to-Cart works the
- * same way for any accessory as it does for a mattress.
+ * Groups rows by the `Category` column and outputs readable sections in the
+ * upsell order: LIFESTYLE_BASE → PROTECTOR → PILLOW → SHEETS. Each row
+ * carries the same Shopify Variant ID from the Upload sheet, so Add-to-Cart
+ * works the same way for any accessory as it does for a mattress.
  */
 export function getAccessoryData(): string {
   if (cachedAccessories) return cachedAccessories;
@@ -50,12 +50,13 @@ export function getAccessoryData(): string {
   });
 
   // Bucket rows by Category. We re-render each as a compact markdown line so
-  // the AI can pluck them into product cards during cross-sell.
+  // the AI can pluck them into product cards during cross-sell. Order here
+  // controls the prompt section order the AI sees.
   const buckets: Record<string, string[]> = {
+    LIFESTYLE_BASE: [],
     PROTECTOR: [],
     PILLOW: [],
-    FRAME: [],
-    ADJUSTABLE_BASE: [],
+    SHEETS: [],
   };
 
   for (const row of parsed.rows) {
@@ -98,6 +99,26 @@ export function getAccessoryData(): string {
     ""
   );
 
+  // Output order matches the upsell cross-sell flow:
+  // 1. Lifestyle Base  2. Protector  3. Pillow  4. Sheets
+
+  if (buckets.LIFESTYLE_BASE.length) {
+    out.push("## LIFESTYLE BASES");
+    out.push(
+      "Best suggested for customers with back discomfort, hip discomfort, reflux, snoring, or lifestyle upgrade (reading, TV, elevated legs). Match size to the customer's mattress.",
+      "Tier guide:",
+      "- BaseLogic Silver: Entry-level (head/foot articulation).",
+      "- BaseLogic Platinum: Mid-tier (adds massage, USB, wireless remote).",
+      "- Tempur-Ergo 3.0 / 3.0 Smart / ProSmart: Premium tier.",
+      "- Adapt Pro-LO / Pro-HI / ProAdjust: Tempur-Pedic-compatible premium bases.",
+      "- RTG-Sleep 2900 / 3900 / 5900: RTG's own performance tier.",
+      "- EASE 4.0: Stearns & Foster base option.",
+      ""
+    );
+    out.push(...buckets.LIFESTYLE_BASE);
+    out.push("");
+  }
+
   if (buckets.PROTECTOR.length) {
     out.push("## MATTRESS PROTECTORS");
     out.push(
@@ -127,30 +148,13 @@ export function getAccessoryData(): string {
     out.push("");
   }
 
-  if (buckets.FRAME.length) {
-    out.push("## FRAMES");
+  if (buckets.SHEETS.length) {
+    out.push("## SHEETS");
     out.push(
-      "Basic bed frame for customers who need a foundation along with their mattress.",
+      "Match sheet size to the customer's mattress size. Reference the catalog rows below for exact products.",
       ""
     );
-    out.push(...buckets.FRAME);
-    out.push("");
-  }
-
-  if (buckets.ADJUSTABLE_BASE.length) {
-    out.push("## ADJUSTABLE BASES");
-    out.push(
-      "Best suggested for customers with back pain, hip pain, reflux, snoring, or lifestyle upgrade (reading, TV, elevated legs). Match size to the customer's mattress.",
-      "Tier guide:",
-      "- BaseLogic Silver: Entry-level adjustable (head/foot articulation).",
-      "- BaseLogic Platinum: Mid-tier (adds massage, USB, wireless remote).",
-      "- Tempur-Ergo 3.0 / 3.0 Smart / ProSmart: Premium tier.",
-      "- Adapt Pro-LO / Pro-HI / ProAdjust: Tempur-Pedic-compatible premium bases.",
-      "- RTG-Sleep 2900 / 3900 / 5900: RTG's own performance tier.",
-      "- EASE 4.0: Stearns & Foster base option.",
-      ""
-    );
-    out.push(...buckets.ADJUSTABLE_BASE);
+    out.push(...buckets.SHEETS);
     out.push("");
   }
 

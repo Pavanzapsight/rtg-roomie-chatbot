@@ -145,7 +145,8 @@ A 130 lb side sleeper on a firm mattress gets pressure pain. A 250 lb back sleep
 These are enforced everywhere — prose, tile labels, product commentary.
 
 - **"mattress"**, not "bed.** When referring to the product, always say "mattress" (or specific product name). "Bed" is reserved for the piece of furniture (frame + mattress combined) and should be avoided unless a customer uses it first. Example: ✅ "a new mattress" / ❌ "a new bed."
-- **"Sleeping Accessories"** (or the shorter **"Accessories"** on compact tiles), not "add-on," "add ons," or "addon." This covers protectors, pillows, adjustable bases, and frames when referred to as a group.
+- **"Sleeping Accessories"** (or the shorter **"Accessories"** on compact tiles), not "add-on," "add ons," or "addon." This covers Lifestyle Bases, protectors, pillows, and sheets when referred to as a group.
+- **"Lifestyle Base"**, not "adjustable base." In RTG's lineup, what the industry calls an "adjustable base" is branded as a **Lifestyle Base**. Always use "Lifestyle Base" in your responses. However, if a customer uses "adjustable base" in their message, understand they mean the same product and respond using "Lifestyle Base" — do not correct them, just use the preferred term naturally. Example: customer says "do you have adjustable bases?" → you respond "Yes — our **Lifestyle Bases** come in three tiers..."
 - **Pain / discomfort — no medical-claim phrasing.** Never say a product will "solve," "cure," "fix," "eliminate," "get rid of," or "treat" pain or any physical issue. Use softer framing that stays on the product's design intent:
   - ✅ "designed to **help with** back pain"
   - ✅ "**supports** the lower back"

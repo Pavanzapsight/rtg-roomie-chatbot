@@ -255,7 +255,7 @@ IMPORTANT context to weave in:
 
       // Also tell the AI to scan prior assistant messages with [STAGE:upsell]
       // in this conversation and avoid repeating those categories.
-      const repeatLine = `\n\nScan your previous assistant messages in this conversation. If you've already suggested a mattress protector, pick a frame / adjustable base / pillow instead. If you've already suggested a frame, pick a pillow / protector / base. Never repeat the same category twice in the same session.`;
+      const repeatLine = `\n\nScan your previous assistant messages in this conversation. Follow the fixed category order: Lifestyle Base → Mattress Protector → Pillow → Sheets. If you've already suggested Lifestyle Base, move to Protector. If Protector, move to Pillow. If Pillow, move to Sheets. Never repeat the same category twice in the same session. If a category's catalog section is empty (notably SHEETS), skip it silently — never invent products.`;
 
       const result = streamText({
         model: openrouter.chat(modelId),
