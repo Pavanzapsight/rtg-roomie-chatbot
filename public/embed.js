@@ -21,6 +21,11 @@
     PENDING:    "rtg_pending_product",
     PROFILE:    "rtg_visitor_profile",
     WIDGET_OPEN:"rtg_widget_open",
+    // Set to "1" when the user explicitly clicks the in-chat refresh icon.
+    // Suppresses "Welcome back, you were looking for X..." greetings until
+    // the user sends their first message (then the iframe postMessages to
+    // clear it). Persists across page navigations and sessions.
+    SUPPRESS_RETURNING: "rtg_suppress_returning",
   };
   var MAX_HISTORY = 30;
   var MSG_CONTEXT = "rtg-page-context-update";
@@ -441,6 +446,7 @@
           isSharedChat: !!isSharedChat,
           widgetOpen: wasOpen,
           isNewSession: isNewSession,
+          suppressReturning: safeGet(STORAGE.SUPPRESS_RETURNING) === "1",
         });
         // Only fire State 4 greeting on the first tab's first load — not
         // on subsequent loads in the same session.
@@ -514,6 +520,18 @@
 
         case "rtg-clear-messages":
           safeRemove(STORAGE.CHAT);
+          break;
+
+        case "rtg-set-suppress-returning":
+          // Customer clicked in-chat refresh — suppress returning-style
+          // greetings until they actually send a message.
+          safeSet(STORAGE.SUPPRESS_RETURNING, "1");
+          break;
+
+        case "rtg-clear-suppress-returning":
+          // Customer just sent their first message after a refresh —
+          // they're engaging again, so personalization can resume.
+          safeRemove(STORAGE.SUPPRESS_RETURNING);
           break;
 
         case "rtg-widget-open":

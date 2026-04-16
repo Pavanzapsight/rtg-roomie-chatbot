@@ -126,6 +126,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const browsingHistoryRef = useRef(browsingHistory);
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
+  // Durable flag: set when user clicks the in-chat refresh icon. Blocks
+  // "Welcome back, you were looking for..." greetings in both the same
+  // session (handleOpen → generateReturningGreeting) and future sessions
+  // (rtg-init → triggerNewSessionGreeting returning path). Cleared when
+  // the user sends their first message after the refresh. Storage is
+  // bridged to embed.js → host localStorage so it persists across tabs
+  // and reloads.
+  const suppressReturningRef = useRef<boolean>(false);
 
   // State 2 (BROWSING_CHAT_OPEN): contextual product commentary tracking
   const lastContextualProductRef = useRef<string>("");
@@ -234,6 +242,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         // Seed storage from host page's localStorage
         initFromBridge(data.chatMessages || null, true);
         initProfileFromBridge(data.visitorProfile || null, true);
+        suppressReturningRef.current = data.suppressReturning === true;
 
         // Set page context and browsing history
         if (data.pageContext) setPageContext(data.pageContext);
@@ -495,6 +504,13 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
     initFromBridge(null, false);
     initProfileFromBridge(null, false);
+
+    // Load the refresh-suppression flag from localStorage (same key the
+    // embed bridge uses on the host page, so the two modes stay aligned).
+    try {
+      suppressReturningRef.current =
+        localStorage.getItem("rtg_suppress_returning") === "1";
+    } catch { /* noop */ }
 
     const saved = loadMessages();
     if (saved && saved.length > 0) {
@@ -817,10 +833,14 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     if (!gatedFire("new-session", false)) return;
     const profile = loadVisitorProfile();
     const hasPriorChat = messages.filter((m) => m.id !== "welcome").length > 0;
+    // Post-refresh: the customer explicitly asked for a clean slate. Force
+    // the first-timer "new-session" path (generic intro) instead of
+    // "returning" (welcome-back with history), even though visitCount > 1.
     const hasPriorContext =
-      hasPriorChat ||
-      profile.visitCount > 1 ||
-      profile.viewedProducts.length > 0;
+      !suppressReturningRef.current &&
+      (hasPriorChat ||
+        profile.visitCount > 1 ||
+        profile.viewedProducts.length > 0);
     setIsNewSessionPhase(true);
     // Auto-open the chat so the greeting is actually visible. Otherwise
     // the stream lands silently inside a closed pill and the visitor
@@ -907,7 +927,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
-    if (visitorProfile && visitorProfile.visitCount > 1 && messages.length <= 1) {
+    if (
+      visitorProfile &&
+      visitorProfile.visitCount > 1 &&
+      messages.length <= 1 &&
+      !suppressReturningRef.current
+    ) {
       generateReturningGreeting();
     }
     // If user is on a PDP and opens the chat, fire State 2 after dwell
@@ -921,7 +946,17 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     clearMessages();
     setMessages([welcomeUi]);
     setHumanMode(false);
-  }, [setMessages]);
+    // Customer asked for a clean slate — suppress the "Welcome back..."
+    // greeting until they actually send a message. Persists across sessions
+    // via embed bridge (host localStorage) or standalone localStorage.
+    suppressReturningRef.current = true;
+    if (embed && typeof window !== "undefined" && window.parent !== window) {
+      window.parent.postMessage({ type: "rtg-set-suppress-returning" }, "*");
+    } else {
+      try { localStorage.setItem("rtg_suppress_returning", "1"); }
+      catch { /* noop */ }
+    }
+  }, [setMessages, embed]);
 
   const handleShare = useCallback(async () => {
     const shareableMessages = displayMessages.filter((m) => m.id !== "welcome");
@@ -1047,6 +1082,18 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       proactive.markUserActivity();
       setIsNewSessionPhase(false); // user has engaged; no longer in NEW_SESSION
 
+      // Clear the post-refresh suppression flag on first user message —
+      // they're engaging again, so future sessions can resume personalization.
+      if (suppressReturningRef.current) {
+        suppressReturningRef.current = false;
+        if (embed && typeof window !== "undefined" && window.parent !== window) {
+          window.parent.postMessage({ type: "rtg-clear-suppress-returning" }, "*");
+        } else {
+          try { localStorage.removeItem("rtg_suppress_returning"); }
+          catch { /* noop */ }
+        }
+      }
+
       // Check for handoff intent
       const lower = text.toLowerCase();
       if (HANDOFF_PHRASES.some((phrase) => lower.includes(phrase))) {
@@ -1065,7 +1112,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
       await sendMessage({ text: text.trim() });
     },
-    [sendMessage, isStreaming, humanMode, triggerHandoff, setMessages]
+    [sendMessage, isStreaming, humanMode, triggerHandoff, setMessages, embed]
   );
 
   useEffect(() => {
