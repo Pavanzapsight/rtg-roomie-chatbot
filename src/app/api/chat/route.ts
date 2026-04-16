@@ -118,7 +118,7 @@ export async function POST(request: Request) {
           ...modelMessages,
           {
             role: "user",
-            content: `Generate a welcome-back greeting NOW following the returning skill. ${modelMessages.length > 0 ? "Reference one concrete detail from the chat history above." : "The visitor has no prior chat history this session but has visited the site before."} Visitor profile: ${JSON.stringify(visitorProfile)}`,
+            content: `Generate a welcome-back greeting NOW following the returning skill. ${modelMessages.length > 0 ? "Reference one concrete detail from the chat history above." : "The visitor has no prior chat history this session but has visited the site before."} ${pageContext?.cartItems && pageContext.cartItems.length > 0 ? `IMPORTANT: The customer already has items in their cart (${pageContext.cartItems.join("; ")}). Use the "Cart has items — lead with it" template at the top of the returning skill. Lead with checkout as the primary CTA. Do NOT use any of the other templates.` : "The cart is empty; pick the best-matching template based on visitor profile."} Visitor profile: ${JSON.stringify(visitorProfile)}`,
           },
         ],
       });
