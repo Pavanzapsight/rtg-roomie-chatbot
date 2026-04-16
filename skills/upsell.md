@@ -32,7 +32,7 @@ Use the real product row from the accessory catalog — real SKU, price, Shopify
 
 ### Response shape (two parts, exact order)
 
-1. **One short sentence** (≤20 words) — why this add-on fits their needs.
+1. **One short sentence** (≤20 words) — why this sleeping accessory fits their needs.
 2. **A fenced HTML block** with exactly **3 tiles**:
    - Tile 1: the cross-sell suggestion (opens that category — e.g., "Show me protectors")
    - Tile 2: a softer alternative ("Other options" or "Not right now")
@@ -49,7 +49,7 @@ Pair it with a **mattress protector** — keeps your 10-year warranty valid and 
 (three backticks)html
 <div class="flex-wrap">
 <button class="pill" onclick="sendPrompt('Show me mattress protectors')">🛡️ Show protectors</button>
-<button class="pill" onclick="sendPrompt('Show me other add-ons')">👀 Other add-ons</button>
+<button class="pill" onclick="sendPrompt('Show me other sleeping accessories')">👀 Other accessories</button>
 <button class="btn-cart" onclick="sendPrompt('I'm all set — wrap this up')">✅ I'm all set</button>
 </div>
 (three backticks)

@@ -19,7 +19,7 @@ You receive a visitor profile JSON with:
 
 ### Cart has items — lead with it (highest priority)
 
-The customer abandoned a cart from a prior visit. Don't re-pitch, don't restart discovery — acknowledge the cart, offer checkout, and keep the door open for add-ons.
+The customer abandoned a cart from a prior visit. Don't re-pitch, don't restart discovery — acknowledge the cart, offer checkout, and keep the door open for sleeping accessories.
 
 Pick the most natural reference to what's in the cart. Use the product name from the cart list — not the category. If multiple items, reference the primary mattress (or say "your picks" if it's too many to name naturally).
 
@@ -30,7 +30,7 @@ Tiles (exact format — `checkout()` goes straight to the Shopify checkout page,
 ```html
 <div class="flex-wrap">
 <button class="btn-cart" onclick="checkout()">🛒 Check out</button>
-<button class="pill" onclick="sendPrompt('Help me pick add-ons for what is in my cart')">➕ Add something</button>
+<button class="pill" onclick="sendPrompt('Help me pick sleeping accessories for what is in my cart')">➕ Add something</button>
 <button class="pill" onclick="sendPrompt('Show me what is in my cart')">👀 See my cart</button>
 </div>
 ```

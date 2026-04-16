@@ -53,7 +53,7 @@ After the table, add a 💡 line for each row that explains which product wins f
 
 Example:
 💡 **Sleeping hot:** Mattress B's phase-change cover is a step above gel foam — it actively regulates temperature rather than just absorbing it.
-💡 **Back pain:** Both offer good lumbar support, but Mattress A's zoned coils target the lower back more precisely.
+💡 **Back pain:** Both offer good lumbar support, but Mattress A's zoned coils are designed to support the lower back more precisely.
 
 ### Total rows: 4–6 max
 

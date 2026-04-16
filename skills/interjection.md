@@ -94,7 +94,7 @@ That one's a customer favorite — want to see what shoppers pair it with?
 
 (three backticks)html
 <div class="flex-wrap">
-<button class="pill" onclick="sendPrompt('Show me add-ons')">👀 Show add-ons</button>
+<button class="pill" onclick="sendPrompt('Show me sleeping accessories')">👀 Show accessories</button>
 <button class="pill" onclick="sendPrompt('Compare similar picks')">⚖️ Compare picks</button>
 <button class="pill" onclick="sendPrompt('Just browsing')">👋 Just browsing</button>
 </div>
