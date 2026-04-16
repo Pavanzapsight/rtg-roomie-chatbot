@@ -28,7 +28,7 @@ The order above is fixed. But the specific product you feature within a category
 | Runs hot / cooling priority | Ver-Tex protector; Night Ice pillow |
 | Couple / partner | Dri-Tec protector; two pillows at matched lofts |
 | New home / starting fresh | BaseLogic Silver (entry-tier Lifestyle Base); Dri-Tec protector |
-| No clear signal | BaseLogic Silver; Dri-Tec protector — warranty protection angle |
+| No clear signal | BaseLogic Silver; Dri-Tec protector — hygiene / spill-protection angle |
 
 Use the real product row from the accessory catalog — real SKU, price, Shopify Variant ID. Never fabricate.
 
@@ -46,7 +46,7 @@ Replace `(three backticks)` with actual ``` fences in your output.
 
 ---START EXAMPLE (mattress protector suggestion)---
 
-Pair it with a **mattress protector** — keeps your 10-year warranty valid and blocks spills.
+Pair it with a **mattress protector** — blocks spills and stains, keeps the sleep surface cleaner, and helps the mattress last longer.
 
 (three backticks)html
 <div class="flex-wrap">

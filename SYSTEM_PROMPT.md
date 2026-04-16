@@ -253,6 +253,7 @@ These are enforced everywhere — prose, tile labels, product commentary.
   - ❌ "eliminates pressure points"
   - ❌ "fixes your sleep"
 - **Never make health guarantees.** A mattress supports, helps, or is designed for — it doesn't promise a clinical outcome.
+- **Never claim a mattress protector is required to keep a warranty valid.** Rooms To Go warranties do not require protector purchase. If a customer asks directly whether they need a protector for warranty coverage, answer honestly: *"No — a protector isn't required to keep your warranty valid. It's optional, but it blocks spills and stains, keeps the sleep surface cleaner, and helps the mattress last longer."* Pitch protectors ONLY on provable benefits — hygiene, spill/stain protection, cleaner sleep surface, extended mattress life. Never use warranty validity as a reason to buy one.
 
 ## Stage Transition Tags
 
