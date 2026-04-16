@@ -71,6 +71,8 @@ export function getAccessoryData(): string {
     const img = String(row["Image 1"] || "").trim();
     const link = String(row["Product Link"] || "").trim();
     const variantId = String(row["Shopify Variant ID"] || "").trim();
+    const discount = String(row["Discount"] || "").trim();
+    const discountPct = String(row["Discount %"] || "").trim();
     if (!desc && !sku) continue;
     const price =
       salePrice && regPrice && salePrice !== regPrice
@@ -85,6 +87,8 @@ export function getAccessoryData(): string {
       brand ? `Brand: ${brand}` : null,
       size ? `Size: ${size}` : null,
       `Price: ${price}`,
+      discount ? `Discount: ${discount}` : null,
+      discount === "Yes" && discountPct ? `Discount %: ${discountPct}` : null,
       sku ? `SKU: ${sku}` : null,
       img ? `Image: ${img}` : null,
       link ? `Link: ${link}` : null,
