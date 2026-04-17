@@ -11,6 +11,7 @@ import {
 import { getCatalogData, getAccessoryData } from "@/lib/catalog";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
 import { isComplaintMessage } from "@/lib/complaint-detection";
+import { WELCOME_MESSAGE } from "@/lib/constants";
 
 export const maxDuration = 60;
 
@@ -64,7 +65,8 @@ function extractCustomerLocation(headers: Headers): CustomerLocation | undefined
 }
 
 function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
-  return messages
+  const hasWelcome = messages.some((m) => m.id === "welcome");
+  const cleaned = messages
     .filter((m) => m.id !== "welcome")
     .map((m) => {
       const { id: _id, ...rest } = m;
@@ -76,6 +78,18 @@ function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
         ),
       } as Omit<UIMessage, "id">;
     });
+
+  // If the static welcome was in the messages, inject it as a synthetic
+  // assistant message at the start so the AI knows it already greeted.
+  // This prevents the double-intro ("I'm Roomie" twice).
+  if (hasWelcome) {
+    cleaned.unshift({
+      role: "assistant",
+      parts: [{ type: "text", text: WELCOME_MESSAGE }],
+    } as Omit<UIMessage, "id">);
+  }
+
+  return cleaned;
 }
 
 export async function POST(request: Request) {
