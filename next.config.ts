@@ -7,11 +7,10 @@ const nextConfig: NextConfig = {
   // the API returns 500.
   outputFileTracingIncludes: {
     "/api/chat": [
-      "./updated rtg.xlsx",
-      "./SYSTEM_PROMPT.md",
-      "./skills/**/*",
+      "updated rtg.xlsx",
+      "SYSTEM_PROMPT.md",
+      "skills/*",
     ],
-    "/api/share": [],
   },
   async headers() {
     return [
