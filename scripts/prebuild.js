@@ -6,9 +6,29 @@
  * Run via: node scripts/prebuild.js
  * Called automatically before "next build" in the npm build script.
  */
-const { readFileSync, writeFileSync, mkdirSync, readdirSync } = require("fs");
+const { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } = require("fs");
 const { join, basename } = require("path");
-const XLSX = require("xlsx");
+
+console.log("[prebuild] cwd:", process.cwd());
+console.log("[prebuild] node:", process.version);
+console.log("[prebuild] files in cwd:", readdirSync(".").filter(f => /\.(xlsx|md|json)$/.test(f)).join(", "));
+
+let XLSX;
+try {
+  XLSX = require("xlsx");
+  console.log("[prebuild] xlsx loaded OK");
+} catch (e) {
+  console.error("[prebuild] FATAL: cannot load xlsx:", e.message);
+  process.exit(1);
+}
+
+const excelFile = "updated rtg.xlsx";
+if (!existsSync(excelFile)) {
+  console.error("[prebuild] FATAL: file not found:", excelFile);
+  console.error("[prebuild] files in cwd:", readdirSync(".").join(", "));
+  process.exit(1);
+}
+console.log("[prebuild] Excel file found, size:", readFileSync(excelFile).length, "bytes");
 
 const OUT = "src/data";
 mkdirSync(OUT, { recursive: true });
