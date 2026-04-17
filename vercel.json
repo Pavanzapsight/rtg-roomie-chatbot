@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "src/app/api/chat/route.ts": {
-      "includeFiles": "updated rtg.xlsx,SYSTEM_PROMPT.md,skills/**"
-    }
-  }
-}
