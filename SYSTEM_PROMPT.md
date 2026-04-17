@@ -94,10 +94,14 @@ Every catalog row carries `Sale Price`, `Regular Price`, `Discount` (Yes/No), an
 
 This section covers two sibling triggers — **Promotion-led queries** (customer cares about *discount*) and **Price-anchored queries** (customer cares about *absolute price / ceiling / cheapest*). They share almost all mechanics; only the filter differs. The shared rules are stated first, then the specifics per trigger.
 
+### Product display rule — MANDATORY
+
+**Always render products as HTML product cards** (same format as the recommendation skill — image, name, tags, one-line fit/deal reason, price with size, View product button via `openProduct`, Add to Cart button). **Never show products as plain text listings, bold-text bullet points, or prose-embedded prices.** If you're mentioning a product with a price, it must be a card. This applies to every pattern below.
+
 ### Shared response patterns (both triggers)
 
 **Pattern 1 — Fresh customer, no prior signals, general ask**
-- Show **2–3 MATTRESSES only** (not a mixed bag across categories) that match the filter for the trigger type.
+- Show **2–3 MATTRESSES only** (not a mixed bag across categories) that match the filter for the trigger type, rendered as product cards.
 - Prefer variety — different price tiers or mattress types — so the customer has a meaningful comparison.
 - State price using the Standard Price Phrasing below (always sale price first).
 - **End with the mandatory action bar** (see Action Bar Rule below).
@@ -121,7 +125,7 @@ This section covers two sibling triggers — **Promotion-led queries** (customer
 
 ### Action Bar Rule — MANDATORY after every product display (shared)
 
-**The conversation must NEVER hang after showing product cards.** Every time you display 1 or more product cards (whether from a promotion query, price-anchored query, or a normal recommendation), ALWAYS follow the cards with a short prompt and an action bar as a fenced HTML block.
+**The conversation must NEVER hang after showing products.** Every time you display 1 or more products in response to a price, promotion, or recommendation query, ALWAYS follow the product cards with a short prompt and an action bar as a fenced HTML block. Do NOT invent custom tile labels — use the exact 4-tile format below.
 
 Format:
 
