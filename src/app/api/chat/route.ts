@@ -79,7 +79,10 @@ function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
 }
 
 export async function POST(request: Request) {
+  console.log("[chat route] ── POST handler entered ──");
+
   const apiKey = process.env.OPENROUTER_API_KEY;
+  console.log("[chat route] OPENROUTER_API_KEY present:", !!apiKey);
   if (!apiKey) {
     return new Response(
       JSON.stringify({ error: "Missing OPENROUTER_API_KEY" }),
@@ -87,32 +90,58 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = (await request.json()) as ChatRequestBody;
+  let body: ChatRequestBody;
+  try {
+    body = (await request.json()) as ChatRequestBody;
+    console.log("[chat route] body parsed OK — type:", body.type, "messages:", body.messages?.length ?? 0, "model:", body.model);
+  } catch (parseErr) {
+    console.error("[chat route] body parse FAILED:", parseErr);
+    return new Response(
+      JSON.stringify({ error: "Invalid request body" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model, interjectionType } = body;
 
   // IP-inferred geolocation from Vercel edge headers (free, no external call).
-  // Flows through every buildSystemPrompt call so the AI knows the customer's
-  // approximate city when relevant store/visit questions come up. Absent on
-  // localhost and some previews — handled as a no-op downstream.
   const customerLocation = extractCustomerLocation(request.headers);
+  console.log("[chat route] customerLocation:", customerLocation ? `${customerLocation.city}, ${customerLocation.region}, ${customerLocation.country}` : "absent");
 
   // Merge browsing history into page context so it reaches the system prompt
   const pageContext: PageContext | undefined = rawPageContext
     ? { ...rawPageContext, browsingHistory: browsingHistory || rawPageContext.browsingHistory }
     : undefined;
+  console.log("[chat route] pageContext:", pageContext ? `page=${pageContext.page} product=${pageContext.productName || '(none)'} cartItems=${pageContext.cartItems?.length ?? 0}` : "absent");
 
-  const catalogData = getCatalogData();
+  let catalogData: string;
+  try {
+    catalogData = getCatalogData();
+    console.log("[chat route] catalog loaded OK — length:", catalogData.length, "chars");
+  } catch (catErr) {
+    console.error("[chat route] getCatalogData FAILED:", catErr);
+    return new Response(
+      JSON.stringify({ error: "Catalog load failed: " + (catErr instanceof Error ? catErr.message : String(catErr)) }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const modelKey = model || DEFAULT_MODEL;
   const modelId = MODEL_MAP[modelKey] ?? MODEL_MAP[DEFAULT_MODEL];
+  console.log("[chat route] model:", modelKey, "→", modelId);
 
   const openrouter = createOpenRouter({
     apiKey,
     appName: "Roomie Mattress Advisor",
     appUrl: "https://roomstogo.com",
   });
+  console.log("[chat route] openrouter client created");
 
   try {
+    console.log("[chat route] entering try block — type:", type);
+
     if (type === "summarize" && messages.length > 0) {
+      console.log("[chat route] → summarize path");
       const result = streamText({
         model: openrouter.chat(modelId),
         system: "You are a helpful assistant. Complete this phrase naturally in under 15 words, describing what the customer was looking for based on the conversation: 'looking for...'. Start directly with 'looking for' and end with a period. Do not include any preamble.",
@@ -132,6 +161,7 @@ export async function POST(request: Request) {
     }
 
     if (type === "returning" && visitorProfile) {
+      console.log("[chat route] → returning path");
       const systemPrompt = buildSystemPrompt(catalogData, "returning", {
         visitorProfile,
         pageContext: pageContext ?? undefined,
@@ -161,6 +191,7 @@ export async function POST(request: Request) {
     // State 1: Re-engagement after 20min idle. Uses full chat history for the
     // summary, plus the reengagement skill for phrasing.
     if (type === "reengagement") {
+      console.log("[chat route] → reengagement path");
       const systemPrompt = buildSystemPrompt(catalogData, "reengagement", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
@@ -189,6 +220,7 @@ export async function POST(request: Request) {
     // State 2: Contextual product commentary (chat open, navigated to PDP,
     // dwelled 5+ seconds, not within cooldown). Uses the contextual skill.
     if (type === "contextual" && pageContext) {
+      console.log("[chat route] → contextual path, product:", pageContext.productName);
       const systemPrompt = buildSystemPrompt(catalogData, "contextual", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext,
@@ -214,6 +246,7 @@ export async function POST(request: Request) {
     // State 4: first-time-visitor greeting (no prior chat history). Uses the
     // new-session skill which is light — intro + stand by for user input.
     if (type === "new-session") {
+      console.log("[chat route] → new-session path");
       const systemPrompt = buildSystemPrompt(catalogData, "new-session", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
@@ -237,6 +270,7 @@ export async function POST(request: Request) {
     // State 3: BROWSING_CHAT_CLOSED interjection. Subtype tells the skill
     // which sub-template to use (compare/inform/guide/social/resume).
     if (type === "interjection" && interjectionType) {
+      console.log("[chat route] → interjection path, subtype:", interjectionType);
       const systemPrompt = buildSystemPrompt(catalogData, "interjection", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,

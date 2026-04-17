@@ -1,33 +1,16 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { parseExcelBuffer } from "./excel-parser";
+import { CATALOG_RAW, CATALOG_ROWS } from "@/data/catalog-raw";
 
 /**
  * Single source of truth: the `Upload sheet` in `updated rtg.xlsx`.
  *
- * Every product — mattresses, lifestyle bases, pillows, protectors, sheets —
- * lives in this one sheet, each row categorized via the `Category` column
- * (MATTRESS / LIFESTYLE_BASE / PILLOW / PROTECTOR / SHEETS). Every row with a
- * Product Link also has a `Shopify Variant ID` extracted from the URL so
- * Add-to-Cart works uniformly for any category.
+ * Data is pre-parsed at build time by scripts/prebuild.mjs into
+ * src/data/catalog-raw.ts so there's no runtime filesystem read.
  */
-const CATALOG_WORKBOOK = "updated rtg.xlsx";
-const CATALOG_SHEET = "Upload sheet";
-
-let cachedCatalog: string | null = null;
 let cachedAccessories: string | null = null;
 
 /** Full catalog as markdown for the system prompt (all categories). */
 export function getCatalogData(): string {
-  if (cachedCatalog) return cachedCatalog;
-
-  const filePath = join(process.cwd(), CATALOG_WORKBOOK);
-  const buffer = readFileSync(filePath);
-  const parsed = parseExcelBuffer(buffer.buffer as ArrayBuffer, {
-    sheetName: CATALOG_SHEET,
-  });
-  cachedCatalog = parsed.rawText;
-  return cachedCatalog;
+  return CATALOG_RAW;
 }
 
 /**
@@ -43,12 +26,6 @@ export function getCatalogData(): string {
 export function getAccessoryData(): string {
   if (cachedAccessories) return cachedAccessories;
 
-  const filePath = join(process.cwd(), CATALOG_WORKBOOK);
-  const buffer = readFileSync(filePath);
-  const parsed = parseExcelBuffer(buffer.buffer as ArrayBuffer, {
-    sheetName: CATALOG_SHEET,
-  });
-
   // Bucket rows by Category. We re-render each as a compact markdown line so
   // the AI can pluck them into product cards during cross-sell. Order here
   // controls the prompt section order the AI sees.
@@ -59,7 +36,7 @@ export function getAccessoryData(): string {
     SHEETS: [],
   };
 
-  for (const row of parsed.rows) {
+  for (const row of CATALOG_ROWS) {
     const cat = String(row["Category"] || "").trim();
     if (!cat || cat === "MATTRESS" || !(cat in buckets)) continue;
     const desc = String(row["Customer Description"] || "").trim();

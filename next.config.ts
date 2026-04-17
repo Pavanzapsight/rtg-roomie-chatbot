@@ -1,11 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    outputFileTracingIncludes: {
-      "/api/chat": ["./updated rtg.xlsx", "./SYSTEM_PROMPT.md", "./skills/**"],
-    },
-  },
   async headers() {
     return [
       {

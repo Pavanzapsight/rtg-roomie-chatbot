@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { join } from "path";
+import { SYSTEM_PROMPT_RAW } from "@/data/system-prompt-raw";
+import { SKILLS } from "@/data/skills-raw";
 
 export type ConversationStage =
   | "returning"
@@ -72,13 +72,15 @@ export interface CustomerLocation {
   timezone?: string;
 }
 
-const cache: Record<string, string> = {};
-
+/** Load a file from the prebaked data. SYSTEM_PROMPT.md and skills/*.md
+ *  are pre-read at build time by scripts/prebuild.mjs so there's no
+ *  runtime filesystem access on Vercel. */
 function loadFile(relativePath: string): string {
-  if (cache[relativePath]) return cache[relativePath];
-  const filePath = join(process.cwd(), relativePath);
-  cache[relativePath] = readFileSync(filePath, "utf-8");
-  return cache[relativePath];
+  if (relativePath === "SYSTEM_PROMPT.md") return SYSTEM_PROMPT_RAW;
+  // skills/discovery.md → key "discovery"
+  const skillMatch = relativePath.match(/^skills\/(.+)\.md$/);
+  if (skillMatch && SKILLS[skillMatch[1]]) return SKILLS[skillMatch[1]];
+  throw new Error(`[system-prompt] Unknown file: ${relativePath}`);
 }
 
 /**
