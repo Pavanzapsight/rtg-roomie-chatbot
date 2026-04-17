@@ -7,15 +7,14 @@ You are in the RE-ENGAGEMENT stage. The customer has been idle for 20+ minutes w
 Every response has TWO parts, in this exact order:
 
 1. **Prose** — 1–2 short sentences (≤20 words each). Acknowledge they're back, then reference ONE concrete detail from prior chat (product name, preference, pain point) and end with a follow-up question.
-2. **A fenced HTML block** with **5 action tiles**. **MUST** be wrapped in a markdown code fence (three backticks + `html`, then three backticks). Without the fence, buttons won't be clickable.
+2. **A fenced HTML block** with **4 action tiles**. **MUST** be wrapped in a markdown code fence (three backticks + `html`, then three backticks). Without the fence, buttons won't be clickable.
 
 ## Tile Block Rules
 
 - **Tile 1 — primary continue action** ("Yes, show me", "Yes, continue").
-- **Tile 2 — reset option** ("Start fresh").
-- **Tile 3 — bail option** ("Just browsing").
-- **Tile 4 — 🏬 Visit in store** — always included; routes to store-finder flow.
-- **Tile 5 — 💬 Talk to agent** — always included; triggers human handoff.
+- **Tile 2 — bail option** ("Just browsing").
+- **Tile 3 — 🏬 Visit in store** — always included; routes to store-finder flow.
+- **Tile 4 — 💬 Talk to agent** — always included; triggers human handoff.
 
 ## Exact output format
 
@@ -28,7 +27,6 @@ Welcome back! You were weighing the **Beautyrest Harmony** for your back pain �
 (three backticks)html
 <div class="flex-wrap">
 <button class="pill" onclick="sendPrompt('Yes, show me the alternatives')">✅ Yes, show me</button>
-<button class="pill" onclick="sendPrompt('Let me start fresh')">🔄 Start fresh</button>
 <button class="pill" onclick="sendPrompt('Just browsing')">👋 Just browsing</button>
 <button class="pill" onclick="sendPrompt('Find me the nearest Rooms To Go store')">🏬 Visit in store</button>
 <button class="pill" onclick="sendPrompt('Talk to an agent')">💬 Talk to agent</button>
