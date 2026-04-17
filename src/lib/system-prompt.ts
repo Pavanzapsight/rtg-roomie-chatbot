@@ -1,10 +1,5 @@
 import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const PROJECT_ROOT = join(__dirname, "..", "..");
+import { join } from "path";
 
 export type ConversationStage =
   | "returning"
@@ -81,7 +76,7 @@ const cache: Record<string, string> = {};
 
 function loadFile(relativePath: string): string {
   if (cache[relativePath]) return cache[relativePath];
-  const filePath = join(PROJECT_ROOT, relativePath);
+  const filePath = join(process.cwd(), relativePath);
   cache[relativePath] = readFileSync(filePath, "utf-8");
   return cache[relativePath];
 }

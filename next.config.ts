@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Data files (Excel, SYSTEM_PROMPT.md, skills/) are resolved via
-  // import.meta.url in src/lib/ so the bundler traces them automatically.
-  // No manual outputFileTracingIncludes needed.
+  // Data files are included via vercel.json includeFiles.
   async headers() {
     return [
       {
