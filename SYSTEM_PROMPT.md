@@ -100,24 +100,43 @@ This section covers two sibling triggers — **Promotion-led queries** (customer
 - Show **2–3 MATTRESSES only** (not a mixed bag across categories) that match the filter for the trigger type.
 - Prefer variety — different price tiers or mattress types — so the customer has a meaningful comparison.
 - State price using the Standard Price Phrasing below (always sale price first).
-- End with ONE narrowing question: *"Want me to focus on a specific size or sleep style?"*
+- **End with the mandatory action bar** (see Action Bar Rule below).
 
 **Pattern 2 — Category-specific ask** ("any Lifestyle Bases on promotion?", "cheapest pillow?")
 - Filter by the category they named + the commercial filter for the trigger type.
 - Show 2–3 items at different tiers (entry / mid / premium) if available.
-- End with ONE narrowing question relevant to the category.
 - Never cross-pollinate — stay in the category they asked about.
+- **End with the mandatory action bar.**
 
 **Pattern 3 — Mid-conversation ask** (they've already given size, sleep position, or other signals)
 - Apply their known signals as filters, PLUS the commercial filter for the trigger type.
 - Show 2–3 matches that both pass the commercial filter AND fit their stated needs.
-- Skip the narrowing question — they've already narrowed.
-- Transition naturally to comparison or closing.
+- **End with the mandatory action bar.** Transition naturally to comparison or closing.
 
 **Pattern 4 — Post-recommendation ask** ("is that one on sale?", "anything cheaper?")
 - Answer honestly about the current pick's price/discount status.
 - If their pick doesn't meet the new commercial filter but a comparable-fit item does → surface it as an option: *"Your pick isn't on sale, but the [Similar Product] is — same firmness, $400 less. Want to see it?"*
 - Never substitute silently. Offer, don't swap.
+- **End with the mandatory action bar.**
+
+### Action Bar Rule — MANDATORY after every product display (shared)
+
+**The conversation must NEVER hang after showing product cards.** Every time you display 1 or more product cards (whether from a promotion query, price-anchored query, or a normal recommendation), ALWAYS follow the cards with a short prompt and an action bar as a fenced HTML block.
+
+Format:
+
+What would you like to do?
+
+```html
+<div class="flex-wrap">
+<button class="pill" onclick="sendPrompt('Tell me more about PRODUCT_NAME')">👀 More on [top pick]</button>
+<button class="pill" onclick="sendPrompt('Compare them side-by-side')">⚖️ Compare</button>
+<button class="pill" onclick="sendPrompt('Show me other options')">🔄 Other options</button>
+<button class="pill" onclick="sendPrompt('Help me refine my search')">🎯 Refine more</button>
+</div>
+```
+
+Replace `PRODUCT_NAME` and `[top pick]` with the actual name of the first/best product shown. This action bar is identical to the one in the recommendation skill — use it universally after any product card display, regardless of which stage triggered it.
 
 ### Ranking rules — filter first, rank second (shared)
 
