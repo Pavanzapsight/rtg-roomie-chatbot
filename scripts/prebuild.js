@@ -22,13 +22,16 @@ try {
   process.exit(1);
 }
 
-const excelFile = "updated rtg.xlsx";
-if (!existsSync(excelFile)) {
-  console.error("[prebuild] FATAL: file not found:", excelFile);
+// Find the Excel file case-insensitively (macOS = case-insensitive,
+// Vercel Linux = case-sensitive — the actual filename may differ).
+const excelCandidates = readdirSync(".").filter(f => /^updated\s*rtg\.xlsx$/i.test(f));
+if (excelCandidates.length === 0) {
+  console.error("[prebuild] FATAL: no xlsx file matching 'updated rtg.xlsx' (case-insensitive)");
   console.error("[prebuild] files in cwd:", readdirSync(".").join(", "));
   process.exit(1);
 }
-console.log("[prebuild] Excel file found, size:", readFileSync(excelFile).length, "bytes");
+const excelFile = excelCandidates[0];
+console.log("[prebuild] Excel file found:", excelFile, "size:", readFileSync(excelFile).length, "bytes");
 
 const OUT = "src/data";
 mkdirSync(OUT, { recursive: true });
