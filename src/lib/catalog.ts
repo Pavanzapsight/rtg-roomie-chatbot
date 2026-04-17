@@ -1,6 +1,14 @@
 import { readFileSync } from "fs";
-import { join } from "path";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { parseExcelBuffer } from "./excel-parser";
+
+// Resolve from this file's location so Next.js/NFT traces the dependency.
+// process.cwd() is invisible to the bundler — files at that path aren't
+// included in the serverless function bundle on Vercel.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, "..", "..");
 
 /**
  * Single source of truth: the `Upload sheet` in `updated rtg.xlsx`.
@@ -21,7 +29,7 @@ let cachedAccessories: string | null = null;
 export function getCatalogData(): string {
   if (cachedCatalog) return cachedCatalog;
 
-  const filePath = join(process.cwd(), CATALOG_WORKBOOK);
+  const filePath = join(PROJECT_ROOT, CATALOG_WORKBOOK);
   const buffer = readFileSync(filePath);
   const parsed = parseExcelBuffer(buffer.buffer as ArrayBuffer, {
     sheetName: CATALOG_SHEET,
@@ -43,7 +51,7 @@ export function getCatalogData(): string {
 export function getAccessoryData(): string {
   if (cachedAccessories) return cachedAccessories;
 
-  const filePath = join(process.cwd(), CATALOG_WORKBOOK);
+  const filePath = join(PROJECT_ROOT, CATALOG_WORKBOOK);
   const buffer = readFileSync(filePath);
   const parsed = parseExcelBuffer(buffer.buffer as ArrayBuffer, {
     sheetName: CATALOG_SHEET,
