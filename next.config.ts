@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Ensure the Excel catalog, system prompt, and skill files are bundled
+  // into the serverless function. readFileSync at runtime is invisible to
+  // the bundler — without this, the files are missing in /var/task/ and
+  // the API returns 500.
+  outputFileTracingIncludes: {
+    "/api/chat": [
+      "./updated rtg.xlsx",
+      "./SYSTEM_PROMPT.md",
+      "./skills/**/*",
+    ],
+    "/api/share": [],
+  },
   async headers() {
     return [
       {
