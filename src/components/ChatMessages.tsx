@@ -32,6 +32,22 @@ interface Segment {
   content: string;
 }
 
+function isProductCardHtml(html: string): boolean {
+  return /class=["'][^"']*\bcard\b/.test(html);
+}
+
+function isPillOnlyHtml(html: string): boolean {
+  const hasCard = /class=["'][^"']*\bcard\b/.test(html);
+  const hasPill = /class=["'][^"']*\bpill\b/.test(html);
+  return hasPill && !hasCard;
+}
+
+function cleanTextSegment(text: string): string {
+  return text
+    .replace(/^\s*What would you like to do\?\s*$/gim, "")
+    .trim();
+}
+
 function parseSegments(rawText: string): Segment[] {
   const text = stripStageTag(rawText);
   const segments: Segment[] = [];
@@ -41,7 +57,7 @@ function parseSegments(rawText: string): Segment[] {
 
   while ((match = htmlBlockRegex.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      const before = text.slice(lastIndex, match.index).trim();
+      const before = cleanTextSegment(text.slice(lastIndex, match.index));
       if (before) segments.push({ type: "text", content: before });
     }
     segments.push({ type: "html", content: match[1].trim() });
@@ -56,11 +72,13 @@ function parseSegments(rawText: string): Segment[] {
       remaining = remaining.slice(0, incompleteStart);
     }
     const trimmed = remaining.trim();
-    if (trimmed) segments.push({ type: "text", content: trimmed });
+    const cleaned = cleanTextSegment(trimmed);
+    if (cleaned) segments.push({ type: "text", content: cleaned });
   }
 
   if (segments.length === 0 && !text.includes("```html")) {
-    segments.push({ type: "text", content: text });
+    const cleaned = cleanTextSegment(text);
+    if (cleaned) segments.push({ type: "text", content: cleaned });
   }
 
   return segments;
@@ -101,28 +119,25 @@ function MessageBubble({
           </span>
         </div>
       )}
-      <div
-        className={`max-w-[88%] px-4 py-2.5 text-[15px] leading-relaxed ${
-          isUser ? "rounded-2xl rounded-br-sm" : "rounded-xl chat-content"
-        }`}
-        style={{
-          backgroundColor: "white",
-          color: "var(--rtg-charcoal)",
-          border: isUser ? "none" : "1px solid var(--rtg-gray-200)",
-          boxShadow: isUser ? "none" : "0 1px 3px rgba(0,0,0,0.06)",
-          ...(isUser ? { backgroundColor: "var(--rtg-blue-light)" } : {}),
-        }}
-      >
-        {isUser ? (
-          message.text
-        ) : (
+      {isUser ? (
+        <div
+          className="max-w-[88%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[15px] leading-relaxed"
+          style={{
+            backgroundColor: "var(--rtg-blue-light)",
+            color: "var(--rtg-charcoal)",
+          }}
+        >
+          {message.text}
+        </div>
+      ) : (
+        <div className="flex w-full max-w-full flex-col gap-2">
           <FormattedMessage
             text={message.text}
             messageId={message.id}
             isStreaming={isLastAssistant && isStreaming}
           />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,46 +152,96 @@ function FormattedMessage({
   isStreaming: boolean;
 }) {
   const segments = useMemo(() => parseSegments(text), [text]);
+  const content: React.ReactNode[] = [];
 
-  return (
-    <>
-      {segments.map((seg, idx) => {
-        if (seg.type === "html") {
-          return (
-            <InlineHTML
-              key={`${messageId}-html-${idx}`}
-              html={seg.content}
-              id={`${messageId}-${idx}`}
-            />
-          );
-        }
-        return (
-          <div key={`${messageId}-text-${idx}`} className="streamdown-content">
-            <Streamdown
-              mode={isStreaming ? "streaming" : "static"}
-              parseIncompleteMarkdown={isStreaming}
-              linkSafety={{ enabled: false }}
-              components={{
-                a: ({ href, children, ...rest }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: "var(--rtg-blue)", textDecoration: "underline" }}
-                    {...rest}
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
+
+    if (seg.type === "html" && isProductCardHtml(seg.content)) {
+      const cardSegments = [seg];
+
+      while (
+        idx + 1 < segments.length &&
+        segments[idx + 1].type === "html" &&
+        isProductCardHtml(segments[idx + 1].content)
+      ) {
+        cardSegments.push(segments[idx + 1]);
+        idx++;
+      }
+
+      content.push(
+        <div
+          key={`${messageId}-cards-${idx}`}
+          className="my-1 flex w-full snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
+        >
+          {cardSegments.map((cardSeg, cardIdx) => (
+            <div
+              key={`${messageId}-html-${idx}-${cardIdx}`}
+              className="w-[312px] shrink-0 snap-start"
             >
-              {seg.content}
-            </Streamdown>
-          </div>
-        );
-      })}
-    </>
-  );
+              <InlineHTML
+                html={cardSeg.content}
+                id={`${messageId}-${idx}-${cardIdx}`}
+              />
+            </div>
+          ))}
+        </div>
+      );
+      continue;
+    }
+
+    if (seg.type === "html") {
+      const isPillRow = isPillOnlyHtml(seg.content);
+
+      content.push(
+        <div
+          key={`${messageId}-html-shell-${idx}`}
+          className={
+            isPillRow
+              ? ""
+              : "rounded-2xl border border-[var(--rtg-gray-200)] bg-white px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+          }
+        >
+          <InlineHTML
+            key={`${messageId}-html-${idx}`}
+            html={seg.content}
+            id={`${messageId}-${idx}`}
+          />
+        </div>
+      );
+      continue;
+    }
+
+    content.push(
+      <div
+        key={`${messageId}-text-${idx}`}
+        className="streamdown-content rounded-2xl border border-[#E8E8E8] bg-[var(--rtg-gray-50)] px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+      >
+        <Streamdown
+          mode={isStreaming ? "streaming" : "static"}
+          parseIncompleteMarkdown={isStreaming}
+          linkSafety={{ enabled: false }}
+          components={{
+            a: ({ href, children, ...rest }) => (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--rtg-blue)", textDecoration: "underline" }}
+                {...rest}
+              >
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {seg.content}
+        </Streamdown>
+      </div>
+    );
+  }
+
+  return <>{content}</>;
 }
 
 export function ChatMessages({

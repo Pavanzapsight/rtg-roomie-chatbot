@@ -55,6 +55,12 @@ const IFRAME_BRIDGE_SCRIPT = `
     window.parent.postMessage({ type: 'rtg-checkout' }, '*');
   }
 
+  function askSimilar(productName) {
+    var name = String(productName || '').trim();
+    if (!name) return;
+    sendPrompt('Show me products similar to ' + name);
+  }
+
   // Auto-resize iframe to fit content.
   // Multiple strategies because size changes can happen from many sources
   // (DOM mutations, image loads, font loads, reflows) and we must never
@@ -109,6 +115,43 @@ const IFRAME_BRIDGE_SCRIPT = `
   }
   hookImages();
   new MutationObserver(hookImages).observe(document.body, {
+    childList: true, subtree: true
+  });
+
+  function enhanceProductCards() {
+    var cards = document.querySelectorAll('.card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      if (card.__rtgEnhanced) continue;
+      card.__rtgEnhanced = true;
+
+      var media = card.querySelector('.card-media');
+      var title = card.querySelector('.card-title');
+      if (!media || !title) continue;
+
+      media.style.position = 'relative';
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'card-similar-btn';
+      btn.setAttribute('aria-label', 'Show products similar to ' + title.textContent.trim());
+      btn.textContent = '+';
+      btn.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var parentCard = event.currentTarget.closest('.card');
+        var parentTitle = parentCard ? parentCard.querySelector('.card-title') : null;
+        var productName = parentTitle ? parentTitle.textContent : '';
+        askSimilar(productName);
+      });
+      media.appendChild(btn);
+    }
+  }
+  enhanceProductCards();
+  new MutationObserver(function () {
+    enhanceProductCards();
+    notifyHeight();
+  }).observe(document.body, {
     childList: true, subtree: true
   });
 
@@ -171,37 +214,112 @@ const IFRAME_BASE_STYLES = `
 
   /* Card styles */
   .card {
-    border: 1px solid #E5E5E5;
-    border-radius: 12px;
-    padding: 12px;
+    border: 1px solid #E8E4DC;
+    border-radius: 24px;
+    padding: 0;
     margin: 4px 0;
     background: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
+    overflow: hidden;
   }
-  .card-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .card-title {
+    font-weight: 700;
+    font-size: 19px;
+    line-height: 1.3;
+    padding: 18px 20px 0;
+    margin-bottom: 0;
+    color: #232323;
+  }
   .card-media {
     cursor: pointer;
-    margin: -12px -12px 10px -12px;
-    border-radius: 12px 12px 0 0;
+    margin: 0;
+    border-radius: 24px 24px 0 0;
     overflow: hidden;
-    background: #F5F5F5;
+    background: linear-gradient(180deg, #FFFFFF 0%, #FBFAF7 100%);
+    border-bottom: 1px solid #EEE8DF;
   }
   .card-media:focus-visible { outline: 2px solid #E4002B; outline-offset: 2px; }
   .card-image {
     width: 100%;
-    height: 132px;
-    object-fit: cover;
+    height: 240px;
+    object-fit: contain;
     display: block;
     vertical-align: middle;
+    padding: 16px;
   }
-  .card-price { font-weight: 700; color: #1A1A1A; font-size: 16px; }
+  .card-price {
+    font-weight: 500;
+    color: #232323;
+    font-size: 16px;
+    padding: 0 20px 18px;
+  }
   .card-tag {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 11px; font-weight: 600; margin-right: 4px;
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 10px 0 0 20px;
   }
   .tag-premium { background: #FDF4E7; color: #C9A95C; }
   .tag-value { background: #E8F5E9; color: #2E7D32; }
   .tag-cooling { background: #E3F2FD; color: #1565C0; }
+  .card-similar-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 1px solid #E8E4DC;
+    background: rgba(255, 255, 255, 0.96);
+    color: #232323;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 500;
+    box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .card-similar-btn:hover {
+    background: #FFFFFF;
+    transform: scale(1.03);
+  }
+  .card > p {
+    padding: 8px 20px 0;
+    color: #5A5A5A;
+    font-size: 14px !important;
+    line-height: 1.45;
+  }
+  .card > div[style*="display:flex"] {
+    display: flex !important;
+    flex-direction: column;
+    gap: 0 !important;
+    margin: 0 !important;
+    border-top: 1px solid #EEE8DF;
+  }
+  .card > div[style*="display:flex"] > button {
+    width: 100%;
+    border: 0;
+    border-top: 1px solid #EEE8DF;
+    border-radius: 0;
+    background: #FFFFFF;
+    color: #232323;
+    padding: 18px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    justify-content: center;
+    text-align: center;
+  }
+  .card > div[style*="display:flex"] > button:first-child {
+    border-top: 0;
+  }
+  .card > div[style*="display:flex"] > button:hover {
+    background: #F7F4EF;
+    color: #111111;
+  }
 
   /* Button styles */
   button { font-family: inherit; }
@@ -245,9 +363,10 @@ const IFRAME_BASE_STYLES = `
 interface InlineHTMLProps {
   html: string;
   id: string;
+  className?: string;
 }
 
-export function InlineHTML({ html, id }: InlineHTMLProps) {
+export function InlineHTML({ html, id, className }: InlineHTMLProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(40);
 
@@ -282,7 +401,7 @@ ${IFRAME_BRIDGE_SCRIPT}
       srcDoc={srcdoc}
       sandbox="allow-scripts"
       title={`Interactive content ${id}`}
-      className="my-0.5 w-full border-0"
+      className={`my-0.5 w-full border-0 ${className ?? ""}`}
       style={{
         height: `${height}px`,
         background: "transparent",

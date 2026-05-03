@@ -59,6 +59,7 @@ export function ChatInput({
       style={{
         borderTop: "1px solid var(--rtg-gray-200)",
         backgroundColor: "white",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
       {/* Human mode banner */}

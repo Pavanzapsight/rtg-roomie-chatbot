@@ -286,14 +286,15 @@ THREE_BACKTICKS_html
 <p style="margin:6px 0;font-size:13px">One line about why this fits their needs</p>
 <div class="card-price">$X,XXX Size</div>
 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-<button type="button" class="btn-primary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>View product</button>
-<button type="button" class="btn-cart" onclick="addToCart(PASTE_SHOPIFY_VARIANT_ID_FROM_THIS_PRODUCTS_ROW)">🛒 Add to Cart</button>
+<button type="button" class="btn-primary" onclick="addToCart(PASTE_SHOPIFY_VARIANT_ID_FROM_THIS_PRODUCTS_ROW)">Add to cart</button>
+<button type="button" class="btn-secondary" onclick='openProduct("PASTE_PRODUCT_LINK_URL_HERE", "PRODUCT NAME")'>Ask more</button>
 </div>
 </div>
 THREE_BACKTICKS
 
 - **View product** and clicking the **image** must call **openProduct** with the exact **Product Link** URL from the catalog AND the product name as arguments. Do not invent URLs.
 - **Add to Cart** button is MANDATORY on EVERY product card — no exceptions. The onclick handler uses THAT PRODUCT ROW'S **Shopify Variant ID** column from CATALOG_DATA. Format: addToCart(NUMERIC_VARIANT_ID). Each card uses ITS OWN variant id from its own row — never reuse the same id across different products.
+- The second footer button should be a curiosity action like **Ask more** or **View details**, and it must call **openProduct("PRODUCT_LINK_URL", "PRODUCT NAME")**.
 - If a catalog row has NO **Shopify Variant ID** (empty cell), use openProduct("PRODUCT_LINK_URL", "PRODUCT NAME") on the Add to Cart button instead — this opens the product page so the customer can add from there. NEVER use sendPrompt('Add X to cart') on the Add to Cart button — that just sends a text message and doesn't actually add to cart.
 - Use the exact **Image 1** URL in the img element's src attribute (optional second image: add another img using **Image 2** if present).
 - For onclick handlers, use single quotes on the outside and double quotes around the URL inside openProduct(...) so URLs stay intact.

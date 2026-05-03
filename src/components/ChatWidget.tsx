@@ -1125,7 +1125,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       {!isOpen && (
         <button
           onClick={handleOpen}
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 ${embed ? "pointer-events-auto" : ""}`}
+          className={`fixed bottom-4 right-4 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 sm:bottom-6 sm:right-6 ${embed ? "pointer-events-auto" : ""}`}
           style={{ backgroundColor: "var(--rtg-blue)" }}
           aria-label="Open Shopping Assistant"
         >
@@ -1140,37 +1140,46 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       )}
 
       {isOpen && (
-        <div
-          className={`widget-enter fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl shadow-2xl ${embed ? "pointer-events-auto" : ""}`}
-          style={{
-            width: 420,
-            height: 640,
-            border: "1px solid var(--rtg-gray-200)",
-          }}
-        >
-          <ChatHeader
-            onMinimize={() => setIsOpen(false)}
-            onRefresh={handleRefresh}
-            onShare={handleShare}
+        <>
+          <button
+            type="button"
+            aria-label="Close Shopping Assistant"
+            onClick={() => setIsOpen(false)}
+            className={`fixed inset-0 z-40 bg-black/10 ${embed ? "pointer-events-auto" : ""}`}
           />
 
-          <ChatMessages
-            messages={displayMessages}
-            isStreaming={isStreaming}
-            messagesEndRef={messagesEndRef}
-            lastAssistantRef={lastAssistantRef}
-            scrollContainerRef={scrollContainerRef}
-          />
+          <div
+            className={`widget-enter fixed inset-x-0 bottom-0 z-50 flex h-[80dvh] max-h-[80dvh] flex-col overflow-hidden rounded-t-[28px] shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:h-[640px] sm:max-h-[640px] sm:w-[420px] sm:rounded-2xl ${embed ? "pointer-events-auto" : ""}`}
+            style={{
+              border: "1px solid var(--rtg-gray-200)",
+              backgroundColor: "white",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ChatHeader
+              onMinimize={() => setIsOpen(false)}
+              onRefresh={handleRefresh}
+              onShare={handleShare}
+            />
 
-          <ChatInput
-            onSend={handleSend}
-            disabled={isStreaming || humanMode}
-            isStreaming={isStreaming}
-            humanMode={humanMode}
-            onAbort={stop}
-            onChipClick={handleSend}
-          />
-        </div>
+            <ChatMessages
+              messages={displayMessages}
+              isStreaming={isStreaming}
+              messagesEndRef={messagesEndRef}
+              lastAssistantRef={lastAssistantRef}
+              scrollContainerRef={scrollContainerRef}
+            />
+
+            <ChatInput
+              onSend={handleSend}
+              disabled={isStreaming || humanMode}
+              isStreaming={isStreaming}
+              humanMode={humanMode}
+              onAbort={stop}
+              onChipClick={handleSend}
+            />
+          </div>
+        </>
       )}
     </>
   );
