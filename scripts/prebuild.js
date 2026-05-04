@@ -1,83 +1,193 @@
 /**
  * Prebuild: converts Excel catalog, SYSTEM_PROMPT.md, and skills/*.md into
- * importable .ts data files under src/data/. These are then bundled normally
- * by Turbopack/webpack — no runtime filesystem reads on Vercel.
+ * importable data files under src/data/.
  *
- * Run via: node scripts/prebuild.js
- * Called automatically before "next build" in the npm build script.
+ * Catalog output is a bundled SQLite database (base64-encoded in TS) plus
+ * header/schema metadata so the server can run SQL queries without sending
+ * the full workbook to the model.
  */
-const { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } = require("fs");
+const { readFileSync, writeFileSync, mkdirSync, readdirSync } = require("fs");
 const { join, basename } = require("path");
 
 console.log("[prebuild] cwd:", process.cwd());
 console.log("[prebuild] node:", process.version);
-console.log("[prebuild] files in cwd:", readdirSync(".").filter(f => /\.(xlsx|md|json)$/.test(f)).join(", "));
+console.log("[prebuild] files in cwd:", readdirSync(".").filter((f) => /\.(xlsx|md|json)$/.test(f)).join(", "));
 
 let XLSX;
+let initSqlJs;
 try {
   XLSX = require("xlsx");
-  console.log("[prebuild] xlsx loaded OK");
+  initSqlJs = require("sql.js/dist/sql-asm.js");
+  console.log("[prebuild] xlsx + sql.js loaded OK");
 } catch (e) {
-  console.error("[prebuild] FATAL: cannot load xlsx:", e.message);
+  console.error("[prebuild] FATAL: cannot load dependency:", e.message);
   process.exit(1);
 }
 
-// Find the Excel file case-insensitively (macOS = case-insensitive,
-// Vercel Linux = case-sensitive — the actual filename may differ).
-const excelCandidates = readdirSync(".").filter(f => /^updated\s*rtg\.xlsx$/i.test(f));
-if (excelCandidates.length === 0) {
-  console.error("[prebuild] FATAL: no xlsx file matching 'updated rtg.xlsx' (case-insensitive)");
-  console.error("[prebuild] files in cwd:", readdirSync(".").join(", "));
-  process.exit(1);
+const INDEXED_COLUMNS = [
+  "category",
+  "sale_price",
+  "discount",
+  "specialty_brand",
+  "mattress_size",
+  "mattress_type",
+  "support_level",
+  "temperature_management",
+  "comfort",
+];
+
+function toSnakeCase(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[%]/g, " percent ")
+    .replace(/[^\w]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+    .toLowerCase();
 }
-const excelFile = excelCandidates[0];
-console.log("[prebuild] Excel file found:", excelFile, "size:", readFileSync(excelFile).length, "bytes");
 
-const OUT = "src/data";
-mkdirSync(OUT, { recursive: true });
+function escapeSqlIdentifier(value) {
+  return `"${String(value).replace(/"/g, "\"\"")}"`;
+}
 
-// ── 1. Excel catalog → JSON rows + raw markdown text ──
-const wb = XLSX.read(readFileSync("updated rtg.xlsx"), { type: "buffer" });
-const rows = XLSX.utils.sheet_to_json(wb.Sheets["Upload sheet"], {
-  defval: "",
-  raw: false,
+function escapeSqlString(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function inferColumnType(column) {
+  if (["count_of_reviews"].includes(column)) return "INTEGER";
+  if (["avg_star_rating", "sale_price", "regular_price", "discount_percent"].includes(column)) return "REAL";
+  return "TEXT";
+}
+
+function normalizeCell(value, type) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  if (type === "INTEGER") {
+    const parsed = Number.parseInt(text, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (type === "REAL") {
+    const parsed = Number.parseFloat(text.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return text;
+}
+
+async function main() {
+  const excelCandidates = readdirSync(".").filter((f) => /^updated\s*rtg\.xlsx$/i.test(f));
+  if (excelCandidates.length === 0) {
+    console.error("[prebuild] FATAL: no xlsx file matching 'updated rtg.xlsx' (case-insensitive)");
+    console.error("[prebuild] files in cwd:", readdirSync(".").join(", "));
+    process.exit(1);
+  }
+
+  const excelFile = excelCandidates[0];
+  console.log("[prebuild] Excel file found:", excelFile, "size:", readFileSync(excelFile).length, "bytes");
+
+  const OUT = "src/data";
+  mkdirSync(OUT, { recursive: true });
+
+  const wb = XLSX.read(readFileSync(excelFile), { type: "buffer" });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Upload sheet"], {
+    defval: "",
+    raw: false,
+  });
+
+  const headers = Object.keys(rows[0] || {});
+  const seen = new Map();
+  const columnMap = {};
+  const columns = [];
+  for (const header of headers) {
+    const base = toSnakeCase(header);
+    const count = seen.get(base) || 0;
+    seen.set(base, count + 1);
+    const column = count === 0 ? base : `${base}_${count + 1}`;
+    columnMap[column] = header;
+    columns.push({
+      column,
+      header,
+      type: inferColumnType(column),
+    });
+  }
+
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  db.run(
+    `CREATE TABLE catalog_products (${columns
+      .map(({ column, type }) => `${escapeSqlIdentifier(column)} ${type}`)
+      .join(", ")});`
+  );
+
+  const insertSql = `INSERT INTO catalog_products (${columns
+    .map(({ column }) => escapeSqlIdentifier(column))
+    .join(", ")}) VALUES (${columns.map(() => "?").join(", ")});`;
+  const stmt = db.prepare(insertSql);
+  for (const row of rows) {
+    stmt.run(columns.map(({ header, type }) => normalizeCell(row[header], type)));
+  }
+  stmt.free();
+
+  for (const column of INDEXED_COLUMNS) {
+    db.run(
+      `CREATE INDEX IF NOT EXISTS ${escapeSqlIdentifier(`idx_catalog_products_${column}`)} ON catalog_products (${escapeSqlIdentifier(column)});`
+    );
+  }
+
+  const dbBytes = db.export();
+  db.close();
+
+  const dbBase64 = Buffer.from(dbBytes).toString("base64");
+  writeFileSync(
+    join(OUT, "catalog-db.ts"),
+    `// AUTO-GENERATED by scripts/prebuild.js — do not edit
+export const CATALOG_DB_BASE64 = ${JSON.stringify(dbBase64)};
+export const CATALOG_TABLE = "catalog_products";
+export const CATALOG_COLUMN_TO_HEADER: Record<string, string> = ${JSON.stringify(columnMap, null, 2)};
+export const CATALOG_HEADERS: string[] = ${JSON.stringify(headers)};
+export const CATALOG_COLUMNS: string[] = ${JSON.stringify(columns.map(({ column }) => column))};
+export const CATALOG_INDEXED_COLUMNS: string[] = ${JSON.stringify(INDEXED_COLUMNS)};
+`
+  );
+  console.log(`✓ catalog-db.ts — ${rows.length} rows, ${columns.length} cols, ${dbBase64.length} base64 chars`);
+
+  const systemPrompt = readFileSync("SYSTEM_PROMPT.md", "utf-8");
+  writeFileSync(
+    join(OUT, "system-prompt-raw.ts"),
+    `// AUTO-GENERATED by scripts/prebuild.js — do not edit\nexport const SYSTEM_PROMPT_RAW = ${JSON.stringify(systemPrompt)};\n`
+  );
+  console.log(`✓ system-prompt-raw.ts — ${systemPrompt.length} chars`);
+
+  const skillsDir = "skills";
+  const skills = {};
+  for (const f of readdirSync(skillsDir)) {
+    if (!f.endsWith(".md")) continue;
+    const name = basename(f, ".md");
+    skills[name] = readFileSync(join(skillsDir, f), "utf-8");
+  }
+  writeFileSync(
+    join(OUT, "skills-raw.ts"),
+    `// AUTO-GENERATED by scripts/prebuild.js — do not edit\nexport const SKILLS: Record<string, string> = ${JSON.stringify(skills)};\n`
+  );
+  console.log(`✓ skills-raw.ts — ${Object.keys(skills).length} skills: ${Object.keys(skills).join(", ")}`);
+
+  // Keep a tiny legacy stub so any accidental old imports fail loudly at runtime
+  // instead of creating a compile error.
+  writeFileSync(
+    join(OUT, "catalog-raw.ts"),
+    `// AUTO-GENERATED by scripts/prebuild.js — do not edit
+export const CATALOG_RAW = "DEPRECATED: full catalog prompting removed. Use SQL retrieval.";
+export const CATALOG_ROWS: Record<string, string>[] = [];
+`
+  );
+
+  console.log("\nPrebuild complete.");
+}
+
+main().catch((error) => {
+  console.error("[prebuild] FATAL:", error);
+  process.exit(1);
 });
-const headers = Object.keys(rows[0] || {});
-const headerLine = headers.join(" | ");
-const separator = headers.map(() => "---").join(" | ");
-const dataLines = rows.map((row) =>
-  headers.map((h) => String(row[h] ?? "").trim()).join(" | ")
-);
-const rawText = [headerLine, separator, ...dataLines].join("\n");
-
-writeFileSync(
-  join(OUT, "catalog-raw.ts"),
-  `// AUTO-GENERATED by scripts/prebuild.js — do not edit\nexport const CATALOG_RAW = ${JSON.stringify(rawText)};\nexport const CATALOG_ROWS: Record<string, string>[] = ${JSON.stringify(rows)};\n`
-);
-console.log(`✓ catalog-raw.ts — ${rows.length} rows, ${rawText.length} chars`);
-
-// ── 2. SYSTEM_PROMPT.md → string export ──
-const systemPrompt = readFileSync("SYSTEM_PROMPT.md", "utf-8");
-writeFileSync(
-  join(OUT, "system-prompt-raw.ts"),
-  `// AUTO-GENERATED by scripts/prebuild.js — do not edit\nexport const SYSTEM_PROMPT_RAW = ${JSON.stringify(systemPrompt)};\n`
-);
-console.log(`✓ system-prompt-raw.ts — ${systemPrompt.length} chars`);
-
-// ── 3. skills/*.md → key-value map export ──
-const skillsDir = "skills";
-const skills = {};
-for (const f of readdirSync(skillsDir)) {
-  if (!f.endsWith(".md")) continue;
-  const name = basename(f, ".md");
-  skills[name] = readFileSync(join(skillsDir, f), "utf-8");
-}
-writeFileSync(
-  join(OUT, "skills-raw.ts"),
-  `// AUTO-GENERATED by scripts/prebuild.js — do not edit\nexport const SKILLS: Record<string, string> = ${JSON.stringify(skills)};\n`
-);
-console.log(
-  `✓ skills-raw.ts — ${Object.keys(skills).length} skills: ${Object.keys(skills).join(", ")}`
-);
-
-console.log("\nPrebuild complete.");

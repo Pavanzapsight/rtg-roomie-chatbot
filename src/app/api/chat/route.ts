@@ -8,7 +8,20 @@ import {
   type ConversationStage,
   type CustomerLocation,
 } from "@/lib/system-prompt";
-import { getCatalogData, getAccessoryData } from "@/lib/catalog";
+import {
+  buildCatalogPlaceholder,
+  fetchContextualCatalogData,
+  formatRetrievedCatalog,
+  getAccessorySubset,
+  getContextualMissingProductFields,
+  getLastUserText,
+  needsCatalogRetrieval,
+  planCatalogIntent,
+  queryFullCatalog,
+  queryCatalog,
+  resolveCatalogMode,
+  type CatalogMode,
+} from "@/lib/catalog-retrieval";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
 import { isComplaintMessage } from "@/lib/complaint-detection";
 import { WELCOME_MESSAGE } from "@/lib/constants";
@@ -69,7 +82,8 @@ function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
   const cleaned = messages
     .filter((m) => m.id !== "welcome")
     .map((m) => {
-      const { id: _id, ...rest } = m;
+      const { id, ...rest } = m;
+      void id;
       if (m.role !== "assistant") return rest as Omit<UIMessage, "id">;
       return {
         ...rest,
@@ -90,6 +104,109 @@ function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
   }
 
   return cleaned;
+}
+
+function toPlainMessages(messages: UIMessage[]): Array<{ role: "user" | "assistant"; text: string }> {
+  return messages.map((message) => ({
+    role: message.role as "user" | "assistant",
+    text: stripStageTag(getTextFromUiMessage(message)),
+  }));
+}
+
+async function resolveCatalogForStage(input: {
+  stage: ConversationStage;
+  type?: ChatRequestBody["type"];
+  model: Parameters<typeof planCatalogIntent>[0]["model"];
+  catalogMode: CatalogMode;
+  plainMessages: Array<{ role: "user" | "assistant"; text: string }>;
+  pageContext?: PageContext;
+  browsingHistory?: BrowsingHistoryEntry[];
+  visitorProfile?: VisitorProfile;
+}) {
+  if (input.type === "upsell" || input.stage === "closing") {
+    return {
+      catalogData: buildCatalogPlaceholder("No main mattress catalog rows were injected for this turn. Use the accessory subset below for cross-sell decisions."),
+      accessoryData: await getAccessorySubset({ cartItems: input.pageContext?.cartItems }),
+    };
+  }
+
+  if (input.stage === "contextual") {
+    if (getContextualMissingProductFields(input.pageContext)) {
+      return {
+        catalogData: await fetchContextualCatalogData(input.pageContext),
+      };
+    }
+
+    return {
+      catalogData: buildCatalogPlaceholder(),
+    };
+  }
+
+  if (!needsCatalogRetrieval(input.stage)) {
+    return {
+      catalogData: buildCatalogPlaceholder(),
+    };
+  }
+
+  if (input.catalogMode === "full") {
+    const execution = await queryFullCatalog();
+    return {
+      catalogData: formatRetrievedCatalog(execution, {
+        intent: {
+          mode: "product_search",
+          intent_summary: "Manual full catalog mode enabled. Sending the full SQL catalog subset for this turn.",
+          category: null,
+          product_names: [],
+          brands: [],
+          mattress_sizes: [],
+          mattress_types: [],
+          sleep_positions: [],
+          support_levels: [],
+          temperature_management: [],
+          comfort: [],
+          discount_only: false,
+          price_min: null,
+          price_max: null,
+          sort: "relevance",
+          limit: execution.rows.length,
+        },
+      }),
+      retrievalMeta: {
+        intentSummary: "full_catalog_mode",
+        sql: execution.sql,
+        rowCount: execution.rows.length,
+        relaxed: false,
+        filterSummary: "full_catalog=yes",
+      },
+    };
+  }
+
+  const intent = await planCatalogIntent({
+    model: input.model,
+    stage: input.stage,
+    messages: input.plainMessages,
+    pageContext: input.pageContext,
+    browsingHistory: input.browsingHistory,
+  });
+
+  const execution = await queryCatalog(intent, {
+    stage: input.stage,
+    rawUserRequest: getLastUserText(input.plainMessages),
+    pageContext: input.pageContext,
+    browsingHistory: input.browsingHistory,
+    visitorProfile: input.visitorProfile,
+  });
+
+  return {
+    catalogData: formatRetrievedCatalog(execution, { intent }),
+    retrievalMeta: {
+      intentSummary: intent.intent_summary,
+      sql: execution.sql,
+      rowCount: execution.rows.length,
+      relaxed: execution.relaxed,
+      filterSummary: execution.appliedFilters.join("; "),
+    },
+  };
 }
 
 export async function POST(request: Request) {
@@ -127,18 +244,7 @@ export async function POST(request: Request) {
     ? { ...rawPageContext, browsingHistory: browsingHistory || rawPageContext.browsingHistory }
     : undefined;
   console.log("[chat route] pageContext:", pageContext ? `page=${pageContext.page} product=${pageContext.productName || '(none)'} cartItems=${pageContext.cartItems?.length ?? 0}` : "absent");
-
-  let catalogData: string;
-  try {
-    catalogData = getCatalogData();
-    console.log("[chat route] catalog loaded OK — length:", catalogData.length, "chars");
-  } catch (catErr) {
-    console.error("[chat route] getCatalogData FAILED:", catErr);
-    return new Response(
-      JSON.stringify({ error: "Catalog load failed: " + (catErr instanceof Error ? catErr.message : String(catErr)) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
+  const plainMessages = toPlainMessages(messages);
 
   const modelKey = model || DEFAULT_MODEL;
   const modelId = MODEL_MAP[modelKey] ?? MODEL_MAP[DEFAULT_MODEL];
@@ -150,6 +256,9 @@ export async function POST(request: Request) {
     appUrl: "https://roomstogo.com",
   });
   console.log("[chat route] openrouter client created");
+  const chatModel = openrouter.chat(modelId);
+  const catalogMode = resolveCatalogMode(process.env.CATALOG_MODE);
+  console.log("[chat route] catalog mode:", catalogMode);
 
   try {
     console.log("[chat route] entering try block — type:", type);
@@ -157,7 +266,7 @@ export async function POST(request: Request) {
     if (type === "summarize" && messages.length > 0) {
       console.log("[chat route] → summarize path");
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: "You are a helpful assistant. Complete this phrase naturally in under 15 words, describing what the customer was looking for based on the conversation: 'looking for...'. Start directly with 'looking for' and end with a period. Do not include any preamble.",
         messages: [
           {
@@ -176,7 +285,19 @@ export async function POST(request: Request) {
 
     if (type === "returning" && visitorProfile) {
       console.log("[chat route] → returning path");
-      const systemPrompt = buildSystemPrompt(catalogData, "returning", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "returning",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext: pageContext ?? undefined,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "returning", {
         visitorProfile,
         pageContext: pageContext ?? undefined,
         customerLocation,
@@ -187,7 +308,7 @@ export async function POST(request: Request) {
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           ...modelMessages,
@@ -206,7 +327,19 @@ export async function POST(request: Request) {
     // summary, plus the reengagement skill for phrasing.
     if (type === "reengagement") {
       console.log("[chat route] → reengagement path");
-      const systemPrompt = buildSystemPrompt(catalogData, "reengagement", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "reengagement",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext: pageContext ?? undefined,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile: visitorProfile ?? undefined,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "reengagement", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
@@ -216,7 +349,7 @@ export async function POST(request: Request) {
       // Always append a trigger so the AI generates something — existing
       // history alone ends with an assistant turn and produces empty output.
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           ...modelMessages,
@@ -235,14 +368,26 @@ export async function POST(request: Request) {
     // dwelled 5+ seconds, not within cooldown). Uses the contextual skill.
     if (type === "contextual" && pageContext) {
       console.log("[chat route] → contextual path, product:", pageContext.productName);
-      const systemPrompt = buildSystemPrompt(catalogData, "contextual", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "contextual",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile: visitorProfile ?? undefined,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "contextual", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext,
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           ...modelMessages,
@@ -261,13 +406,25 @@ export async function POST(request: Request) {
     // new-session skill which is light — intro + stand by for user input.
     if (type === "new-session") {
       console.log("[chat route] → new-session path");
-      const systemPrompt = buildSystemPrompt(catalogData, "new-session", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "new-session",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext: pageContext ?? undefined,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile: visitorProfile ?? undefined,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "new-session", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
       });
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           {
@@ -285,7 +442,19 @@ export async function POST(request: Request) {
     // which sub-template to use (compare/inform/guide/social/resume).
     if (type === "interjection" && interjectionType) {
       console.log("[chat route] → interjection path, subtype:", interjectionType);
-      const systemPrompt = buildSystemPrompt(catalogData, "interjection", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "interjection",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext: pageContext ?? undefined,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile: visitorProfile ?? undefined,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "interjection", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
@@ -294,7 +463,7 @@ export async function POST(request: Request) {
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           ...modelMessages,
@@ -319,10 +488,24 @@ IMPORTANT context to weave in:
     // Uses the upsell skill — one short suggestion + tiles. Capped at 2
     // invocations per session by the client.
     if (type === "upsell") {
-      const systemPrompt = buildSystemPrompt(catalogData, "upsell", {
+      const retrieval = await resolveCatalogForStage({
+        stage: "upsell",
+        type,
+        model: chatModel,
+        catalogMode,
+        plainMessages,
+        pageContext: pageContext ?? undefined,
+        browsingHistory: browsingHistory ?? undefined,
+        visitorProfile: visitorProfile ?? undefined,
+      });
+      console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+      console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      console.log("[chat route] accessory prompt length:", retrieval.accessoryData?.length ?? 0, "chars");
+      const systemPrompt = buildSystemPrompt(retrieval.catalogData, "upsell", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
+        accessoryData: retrieval.accessoryData,
       });
       const sanitized = sanitizeForModel(messages);
       const modelMessages = await convertToModelMessages(sanitized);
@@ -341,7 +524,7 @@ IMPORTANT context to weave in:
       const repeatLine = `\n\nScan your previous assistant messages in this conversation. Follow the fixed category order: Lifestyle Base → Mattress Protector → Pillow → Sheets. If you've already suggested Lifestyle Base, move to Protector. If Protector, move to Pillow. If Pillow, move to Sheets. Never repeat the same category twice in the same session. If a category's catalog section is empty (notably SHEETS), skip it silently — never invent products.`;
 
       const result = streamText({
-        model: openrouter.chat(modelId),
+        model: chatModel,
         system: systemPrompt,
         messages: [
           ...modelMessages,
@@ -356,34 +539,44 @@ IMPORTANT context to weave in:
       });
     }
 
-    const plainForStage = messages.map((m) => ({
-      role: m.role,
-      text: getTextFromUiMessage(m),
-    }));
-
     // Complaint override: if the user's latest message contains complaint
     // signals (return / defect / refund / strong frustration), force the
     // complaint stage so skills/complaint.md loads immediately — don't
     // wait for the AI to self-route via the system prompt's override. This
     // prevents a turn of "recommendation" or "discovery" behavior firing
     // on top of a complaint message.
-    const lastUser = [...plainForStage].reverse().find((m) => m.role === "user");
+    const lastUser = [...plainMessages].reverse().find((m) => m.role === "user");
     const userSaidComplaint = lastUser ? isComplaintMessage(lastUser.text) : false;
     const currentStage: ConversationStage = userSaidComplaint
       ? "complaint"
-      : inferStage(plainForStage);
-    const systemPrompt = buildSystemPrompt(catalogData, currentStage, {
+      : inferStage(plainMessages);
+
+    const retrieval = await resolveCatalogForStage({
+      stage: currentStage,
+      type,
+      model: chatModel,
+      catalogMode,
+      plainMessages,
+      pageContext: pageContext ?? undefined,
+      browsingHistory: browsingHistory ?? undefined,
+      visitorProfile: visitorProfile ?? undefined,
+    });
+    console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
+    console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+    console.log("[chat route] accessory prompt length:", retrieval.accessoryData?.length ?? 0, "chars");
+
+    const systemPrompt = buildSystemPrompt(retrieval.catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
       pageContext: pageContext ?? undefined,
       customerLocation,
-      accessoryData: currentStage === "closing" ? getAccessoryData() : undefined,
+      accessoryData: retrieval.accessoryData,
     });
 
     const sanitized = sanitizeForModel(messages);
     const modelMessages = await convertToModelMessages(sanitized);
 
     const result = streamText({
-      model: openrouter.chat(modelId),
+      model: chatModel,
       system: systemPrompt,
       messages: modelMessages,
     });
