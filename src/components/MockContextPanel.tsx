@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PRESETS = {
   "First visit (no context)": {},
@@ -43,13 +43,25 @@ const PRESETS = {
 export function MockContextPanel() {
   const [selectedPreset, setSelectedPreset] = useState("");
   const [applied, setApplied] = useState("");
+  const [mockContext, setMockContext] = useState<
+    (typeof PRESETS)[keyof typeof PRESETS] | null
+  >(null);
+
+  useEffect(() => {
+    if (mockContext) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).RTG_CHAT_CONTEXT = { ...mockContext };
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (window as any).RTG_CHAT_CONTEXT;
+  }, [mockContext]);
 
   const applyPreset = (name: string) => {
     const preset = PRESETS[name as keyof typeof PRESETS];
     if (!preset) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).RTG_CHAT_CONTEXT = { ...preset };
+    setMockContext(preset);
     setSelectedPreset(name);
     setApplied(name);
 
@@ -67,8 +79,7 @@ export function MockContextPanel() {
   };
 
   const clearContext = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (window as any).RTG_CHAT_CONTEXT;
+    setMockContext(null);
     setSelectedPreset("");
     setApplied("");
     // Clear visitor profile cookie
@@ -81,17 +92,17 @@ export function MockContextPanel() {
       className="mt-8 rounded-xl border p-4"
       style={{
         maxWidth: 480,
-        borderColor: "var(--rtg-gray-200)",
-        backgroundColor: "white",
+        borderColor: "var(--widget-border)",
+        backgroundColor: "var(--widget-surface)",
       }}
     >
       <h3
         className="mb-2 text-sm font-semibold"
-        style={{ color: "var(--rtg-charcoal)" }}
+        style={{ color: "var(--widget-text)" }}
       >
         🧪 Test Panel — Simulate Page Context
       </h3>
-      <p className="mb-3 text-xs" style={{ color: "var(--rtg-gray-700)" }}>
+      <p className="mb-3 text-xs" style={{ color: "var(--widget-text-muted)" }}>
         Set <code>window.RTG_CHAT_CONTEXT</code> to simulate different pages on
         roomstogo.com. Refresh the chat widget after changing.
       </p>
@@ -104,11 +115,11 @@ export function MockContextPanel() {
             style={{
               borderColor:
                 selectedPreset === name
-                  ? "var(--rtg-red)"
-                  : "var(--rtg-gray-200)",
+                  ? "var(--widget-accent)"
+                  : "var(--widget-border)",
               backgroundColor:
-                selectedPreset === name ? "var(--rtg-red)" : "white",
-              color: selectedPreset === name ? "white" : "var(--rtg-charcoal)",
+                selectedPreset === name ? "var(--widget-accent)" : "var(--widget-surface)",
+              color: selectedPreset === name ? "var(--widget-accent-text)" : "var(--widget-text)",
             }}
           >
             {name}
@@ -118,8 +129,8 @@ export function MockContextPanel() {
           onClick={clearContext}
           className="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
           style={{
-            borderColor: "var(--rtg-gray-200)",
-            color: "var(--rtg-gray-700)",
+            borderColor: "var(--widget-border)",
+            color: "var(--widget-text-muted)",
           }}
         >
           ✕ Clear all
@@ -128,7 +139,7 @@ export function MockContextPanel() {
       {applied && (
         <p
           className="mt-2 text-xs"
-          style={{ color: "var(--rtg-gray-700)" }}
+          style={{ color: "var(--widget-text-muted)" }}
         >
           ✓ Applied: <strong>{applied}</strong> — now open/refresh the chat
           widget

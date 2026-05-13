@@ -10,21 +10,14 @@ import {
 } from "@/lib/system-prompt";
 import {
   buildCatalogPlaceholder,
-  fetchContextualCatalogData,
-  formatRetrievedCatalog,
-  getAccessorySubset,
-  getContextualMissingProductFields,
   getLastUserText,
   needsCatalogRetrieval,
-  planCatalogIntent,
-  queryFullCatalog,
-  queryCatalog,
-  resolveCatalogMode,
-  type CatalogMode,
 } from "@/lib/catalog-retrieval";
 import { inferStage, stripStageTag } from "@/lib/stage-tag";
 import { isComplaintMessage } from "@/lib/complaint-detection";
-import { WELCOME_MESSAGE } from "@/lib/constants";
+import { getWelcomeMessage } from "@/lib/widget-config";
+import type { WidgetBranding } from "@/lib/widget-config";
+import { buildTenantCatalogContext, resolveTenantFromToken } from "@/lib/tenant-platform";
 
 export const maxDuration = 60;
 
@@ -37,6 +30,10 @@ type ChatRequestBody = {
   browsingHistory?: BrowsingHistoryEntry[];
   visitorProfile?: VisitorProfile;
   model?: string;
+  branding?: Partial<WidgetBranding>;
+  tenantKey?: string;
+  sessionId?: string;
+  hostOrigin?: string;
 };
 
 const MODEL_MAP: Record<string, string> = {
@@ -77,7 +74,10 @@ function extractCustomerLocation(headers: Headers): CustomerLocation | undefined
   return hasAny ? loc : undefined;
 }
 
-function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
+function sanitizeForModel(
+  messages: UIMessage[],
+  branding?: Partial<WidgetBranding>
+): Omit<UIMessage, "id">[] {
   const hasWelcome = messages.some((m) => m.id === "welcome");
   const cleaned = messages
     .filter((m) => m.id !== "welcome")
@@ -99,7 +99,17 @@ function sanitizeForModel(messages: UIMessage[]): Omit<UIMessage, "id">[] {
   if (hasWelcome) {
     cleaned.unshift({
       role: "assistant",
-      parts: [{ type: "text", text: WELCOME_MESSAGE }],
+      parts: [{ type: "text", text: getWelcomeMessage({
+        assistantName: typeof branding?.assistantName === "string" && branding.assistantName.trim()
+          ? branding.assistantName.trim()
+          : "Shopping Assistant",
+        launcherLabel: "",
+        headerTitle: "",
+        inputPlaceholder: "",
+        humanModeBannerText: "",
+        quickChips: [],
+        logoMode: "none",
+      }) }],
     } as Omit<UIMessage, "id">);
   }
 
@@ -114,10 +124,9 @@ function toPlainMessages(messages: UIMessage[]): Array<{ role: "user" | "assista
 }
 
 async function resolveCatalogForStage(input: {
+  tenantId: string;
   stage: ConversationStage;
   type?: ChatRequestBody["type"];
-  model: Parameters<typeof planCatalogIntent>[0]["model"];
-  catalogMode: CatalogMode;
   plainMessages: Array<{ role: "user" | "assistant"; text: string }>;
   pageContext?: PageContext;
   browsingHistory?: BrowsingHistoryEntry[];
@@ -126,19 +135,13 @@ async function resolveCatalogForStage(input: {
   if (input.type === "upsell" || input.stage === "closing") {
     return {
       catalogData: buildCatalogPlaceholder("No main mattress catalog rows were injected for this turn. Use the accessory subset below for cross-sell decisions."),
-      accessoryData: await getAccessorySubset({ cartItems: input.pageContext?.cartItems }),
+      accessoryData: (await buildTenantCatalogContext(input.tenantId, input.pageContext?.cartItems)).accessoryData,
     };
   }
 
   if (input.stage === "contextual") {
-    if (getContextualMissingProductFields(input.pageContext)) {
-      return {
-        catalogData: await fetchContextualCatalogData(input.pageContext),
-      };
-    }
-
     return {
-      catalogData: buildCatalogPlaceholder(),
+      catalogData: (await buildTenantCatalogContext(input.tenantId, input.pageContext?.cartItems)).catalogData,
     };
   }
 
@@ -148,63 +151,19 @@ async function resolveCatalogForStage(input: {
     };
   }
 
-  if (input.catalogMode === "full") {
-    const execution = await queryFullCatalog();
-    return {
-      catalogData: formatRetrievedCatalog(execution, {
-        intent: {
-          mode: "product_search",
-          intent_summary: "Manual full catalog mode enabled. Sending the full SQL catalog subset for this turn.",
-          category: null,
-          product_names: [],
-          brands: [],
-          mattress_sizes: [],
-          mattress_types: [],
-          sleep_positions: [],
-          support_levels: [],
-          temperature_management: [],
-          comfort: [],
-          discount_only: false,
-          price_min: null,
-          price_max: null,
-          sort: "relevance",
-          limit: execution.rows.length,
-        },
-      }),
-      retrievalMeta: {
-        intentSummary: "full_catalog_mode",
-        sql: execution.sql,
-        rowCount: execution.rows.length,
-        relaxed: false,
-        filterSummary: "full_catalog=yes",
-      },
-    };
-  }
-
-  const intent = await planCatalogIntent({
-    model: input.model,
-    stage: input.stage,
-    messages: input.plainMessages,
-    pageContext: input.pageContext,
-    browsingHistory: input.browsingHistory,
-  });
-
-  const execution = await queryCatalog(intent, {
-    stage: input.stage,
-    rawUserRequest: getLastUserText(input.plainMessages),
-    pageContext: input.pageContext,
-    browsingHistory: input.browsingHistory,
-    visitorProfile: input.visitorProfile,
-  });
-
+  const runtimeCatalog = await buildTenantCatalogContext(
+    input.tenantId,
+    input.pageContext?.cartItems
+  );
   return {
-    catalogData: formatRetrievedCatalog(execution, { intent }),
+    catalogData: runtimeCatalog.catalogData,
+    accessoryData: runtimeCatalog.accessoryData,
     retrievalMeta: {
-      intentSummary: intent.intent_summary,
-      sql: execution.sql,
-      rowCount: execution.rows.length,
-      relaxed: execution.relaxed,
-      filterSummary: execution.appliedFilters.join("; "),
+      intentSummary: `tenant_full_catalog:${getLastUserText(input.plainMessages) || "n/a"}`,
+      sql: "tenant_catalog_snapshot",
+      rowCount: runtimeCatalog.catalogData.includes("(none)") ? 0 : undefined,
+      relaxed: false,
+      filterSummary: "full_catalog=yes",
     },
   };
 }
@@ -233,7 +192,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const { messages = [], type, pageContext: rawPageContext, browsingHistory, visitorProfile, model, interjectionType } = body;
+  const {
+    messages = [],
+    type,
+    pageContext: rawPageContext,
+    browsingHistory,
+    visitorProfile,
+    model,
+    interjectionType,
+    branding,
+    tenantKey,
+  } = body;
 
   // IP-inferred geolocation from Vercel edge headers (free, no external call).
   const customerLocation = extractCustomerLocation(request.headers);
@@ -250,15 +219,30 @@ export async function POST(request: Request) {
   const modelId = MODEL_MAP[modelKey] ?? MODEL_MAP[DEFAULT_MODEL];
   console.log("[chat route] model:", modelKey, "→", modelId);
 
+  let tenant;
+  try {
+    tenant = await resolveTenantFromToken(
+      String(tenantKey || "").trim() || "rtg-default",
+      request.headers.get("x-tenant-token")
+    );
+  } catch (error) {
+    console.error("[chat route] tenant resolution failed:", error);
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Tenant resolution failed",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const openrouter = createOpenRouter({
     apiKey,
-    appName: "Roomie Mattress Advisor",
-    appUrl: "https://roomstogo.com",
+    appName: tenant.appName,
+    appUrl: tenant.appUrl,
   });
   console.log("[chat route] openrouter client created");
   const chatModel = openrouter.chat(modelId);
-  const catalogMode = resolveCatalogMode(process.env.CATALOG_MODE);
-  console.log("[chat route] catalog mode:", catalogMode);
+  console.log("[chat route] tenant:", tenant.tenantKey, tenant.tenantId);
 
   try {
     console.log("[chat route] entering try block — type:", type);
@@ -286,10 +270,9 @@ export async function POST(request: Request) {
     if (type === "returning" && visitorProfile) {
       console.log("[chat route] → returning path");
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "returning",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext: pageContext ?? undefined,
         browsingHistory: browsingHistory ?? undefined,
@@ -301,11 +284,13 @@ export async function POST(request: Request) {
         visitorProfile,
         pageContext: pageContext ?? undefined,
         customerLocation,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
       // Include prior chat history (if any) so the AI can reference the
       // last topic. Always append a trigger message so the AI generates
       // (an assistant-ended history alone would produce empty output).
-      const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
         model: chatModel,
@@ -328,10 +313,9 @@ export async function POST(request: Request) {
     if (type === "reengagement") {
       console.log("[chat route] → reengagement path");
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "reengagement",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext: pageContext ?? undefined,
         browsingHistory: browsingHistory ?? undefined,
@@ -343,8 +327,10 @@ export async function POST(request: Request) {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
-      const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
       const modelMessages = await convertToModelMessages(sanitized);
       // Always append a trigger so the AI generates something — existing
       // history alone ends with an assistant turn and produces empty output.
@@ -369,10 +355,9 @@ export async function POST(request: Request) {
     if (type === "contextual" && pageContext) {
       console.log("[chat route] → contextual path, product:", pageContext.productName);
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "contextual",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext,
         browsingHistory: browsingHistory ?? undefined,
@@ -383,8 +368,10 @@ export async function POST(request: Request) {
       const systemPrompt = buildSystemPrompt(retrieval.catalogData, "contextual", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
-      const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
         model: chatModel,
@@ -407,10 +394,9 @@ export async function POST(request: Request) {
     if (type === "new-session") {
       console.log("[chat route] → new-session path");
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "new-session",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext: pageContext ?? undefined,
         browsingHistory: browsingHistory ?? undefined,
@@ -422,6 +408,8 @@ export async function POST(request: Request) {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
         customerLocation,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
       const result = streamText({
         model: chatModel,
@@ -443,10 +431,9 @@ export async function POST(request: Request) {
     if (type === "interjection" && interjectionType) {
       console.log("[chat route] → interjection path, subtype:", interjectionType);
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "interjection",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext: pageContext ?? undefined,
         browsingHistory: browsingHistory ?? undefined,
@@ -459,8 +446,10 @@ export async function POST(request: Request) {
         pageContext: pageContext ?? undefined,
         customerLocation,
         interjectionType,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
-      const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
       const modelMessages = await convertToModelMessages(sanitized);
       const result = streamText({
         model: chatModel,
@@ -489,10 +478,9 @@ IMPORTANT context to weave in:
     // invocations per session by the client.
     if (type === "upsell") {
       const retrieval = await resolveCatalogForStage({
+        tenantId: tenant.tenantId,
         stage: "upsell",
         type,
-        model: chatModel,
-        catalogMode,
         plainMessages,
         pageContext: pageContext ?? undefined,
         browsingHistory: browsingHistory ?? undefined,
@@ -506,8 +494,10 @@ IMPORTANT context to weave in:
         pageContext: pageContext ?? undefined,
         customerLocation,
         accessoryData: retrieval.accessoryData,
+        tenantPromptConfig: tenant.prompt,
+        tenantAiConfig: tenant.aiConfig,
       });
-      const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
       const modelMessages = await convertToModelMessages(sanitized);
 
       // Build an explicit exclusion list so the AI can't blindly suggest
@@ -552,10 +542,9 @@ IMPORTANT context to weave in:
       : inferStage(plainMessages);
 
     const retrieval = await resolveCatalogForStage({
+      tenantId: tenant.tenantId,
       stage: currentStage,
       type,
-      model: chatModel,
-      catalogMode,
       plainMessages,
       pageContext: pageContext ?? undefined,
       browsingHistory: browsingHistory ?? undefined,
@@ -570,9 +559,11 @@ IMPORTANT context to weave in:
       pageContext: pageContext ?? undefined,
       customerLocation,
       accessoryData: retrieval.accessoryData,
+      tenantPromptConfig: tenant.prompt,
+      tenantAiConfig: tenant.aiConfig,
     });
 
-    const sanitized = sanitizeForModel(messages);
+      const sanitized = sanitizeForModel(messages, branding);
     const modelMessages = await convertToModelMessages(sanitized);
 
     const result = streamText({

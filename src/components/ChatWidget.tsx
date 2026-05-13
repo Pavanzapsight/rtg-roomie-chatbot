@@ -12,13 +12,13 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
-import { RTGLogo } from "./RTGLogo";
-import { WELCOME_MESSAGE } from "@/lib/constants";
+import { WidgetAvatar } from "./WidgetAvatar";
 import {
   saveMessages,
   loadMessages,
   clearMessages,
   initFromBridge,
+  configureMessageStorageNamespace,
 } from "@/lib/chat-storage";
 import { stripStageTag } from "@/lib/stage-tag";
 import {
@@ -27,6 +27,7 @@ import {
   loadVisitorProfile,
   updateProfileFromChat,
   initProfileFromBridge,
+  configureProfileStorageNamespace,
 } from "@/lib/visitor-profile";
 import type { PageContext, BrowsingHistoryEntry } from "@/lib/system-prompt";
 import {
@@ -37,21 +38,51 @@ import {
 import { useProactiveGuard, type ProactiveReason } from "@/hooks/useProactiveGuard";
 import { useChatState } from "@/hooks/useChatState";
 import { isInComplaintMode } from "@/lib/complaint-detection";
+import {
+  buildWidgetThemeStyle,
+  getWindowChatConfig,
+  getWelcomeMessage,
+  mergeWidgetConfigLayers,
+  resolveWidgetConfig,
+  type WidgetBranding,
+} from "@/lib/widget-config";
+import {
+  getBrowserSessionId,
+  getScopedStorageKey,
+  setStorageNamespace,
+} from "@/lib/browser-session";
+import type { PersistedChatMessage } from "@/lib/chat-types";
+import type { TenantBootstrap } from "@/lib/platform-types";
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-}
+export type ChatMessage = PersistedChatMessage;
 
 export type { PageContext };
 
 const CHAT_ID = "rtg-roomie-chat";
-const welcomeUi: UIMessage = {
-  id: "welcome",
-  role: "assistant",
-  parts: [{ type: "text", text: WELCOME_MESSAGE }],
-};
+const HANDOFF_PHRASES = [
+  "talk to someone",
+  "talk to a person",
+  "talk to a human",
+  "speak to someone",
+  "speak to a person",
+  "speak to a human",
+  "speak to an agent",
+  "talk to an agent",
+  "human agent",
+  "real person",
+  "live agent",
+  "customer service",
+  "customer support",
+  "representative",
+];
+
+function buildWelcomeUi(branding: WidgetBranding): UIMessage {
+  return {
+    id: "welcome",
+    role: "assistant",
+    parts: [{ type: "text", text: getWelcomeMessage(branding) }],
+  };
+}
 
 function getTextFromUIMessage(m: UIMessage): string {
   return m.parts
@@ -107,14 +138,64 @@ function getPageContext(): PageContext | null {
   };
 }
 
+function getHostOrigin(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.location.origin;
+  } catch {
+    return "";
+  }
+}
+
+async function fetchTenantBootstrap(input: {
+  tenantKey: string;
+  sessionId: string;
+  hostOrigin: string;
+  localMessages?: PersistedChatMessage[] | null;
+  localProfile?: VisitorProfile | null;
+}): Promise<TenantBootstrap> {
+  const response = await fetch("/api/widget/bootstrap", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to bootstrap tenant session.");
+  }
+
+  return (await response.json()) as TenantBootstrap;
+}
+
 export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const selectedModel = "gemini-flash-3";
+  const initialTenantKey = getWindowChatConfig()?.tenantKey?.trim() || "rtg-default";
+  const [widgetConfig, setWidgetConfig] = useState(() =>
+    resolveWidgetConfig(getWindowChatConfig())
+  );
+  const [tenantKey, setTenantKey] = useState(initialTenantKey);
+  const [tenantToken, setTenantToken] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
+  const [storageNamespace, setStorageNamespaceState] = useState<string>(
+    initialTenantKey || "rtg-default"
+  );
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
   const [humanMode, setHumanMode] = useState(false);
+  const welcomeUi = useMemo(
+    () => buildWelcomeUi(widgetConfig.branding),
+    [widgetConfig.branding]
+  );
+  const widgetThemeStyle = useMemo(
+    () => buildWidgetThemeStyle(widgetConfig.theme),
+    [widgetConfig.theme]
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastAssistantRef = useRef<HTMLDivElement>(null);
@@ -124,6 +205,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const selectedModelRef = useRef(selectedModel);
   const pageContextRef = useRef(pageContext);
   const browsingHistoryRef = useRef(browsingHistory);
+  const brandingRef = useRef(widgetConfig.branding);
+  const tenantKeyRef = useRef(tenantKey);
+  const tenantTokenRef = useRef(tenantToken);
+  const sessionIdRef = useRef(sessionId);
+  const hostOriginRef = useRef(getHostOrigin());
   const requestExtrasRef = useRef<Record<string, unknown> | null>(null);
   const isOpenRef = useRef(isOpen);
   // Durable flag: set when user clicks the in-chat refresh icon. Blocks
@@ -174,6 +260,15 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   useEffect(() => { pageContextRef.current = pageContext; }, [pageContext]);
   useEffect(() => { browsingHistoryRef.current = browsingHistory; }, [browsingHistory]);
+  useEffect(() => { brandingRef.current = widgetConfig.branding; }, [widgetConfig.branding]);
+  useEffect(() => { tenantKeyRef.current = tenantKey; }, [tenantKey]);
+  useEffect(() => { tenantTokenRef.current = tenantToken; }, [tenantToken]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => {
+    setStorageNamespace(storageNamespace);
+    configureMessageStorageNamespace(storageNamespace);
+    configureProfileStorageNamespace(storageNamespace);
+  }, [storageNamespace]);
 
   const transport = useMemo(
     () =>
@@ -184,12 +279,19 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           requestExtrasRef.current = null;
           const ctx = pageContextRef.current || getPageContext();
           return {
+            headers: {
+              "x-tenant-token": tenantTokenRef.current,
+            },
             body: {
               id,
               messages,
               ...(body ?? {}),
+              tenantKey: tenantKeyRef.current,
+              sessionId: sessionIdRef.current || id,
+              hostOrigin: hostOriginRef.current,
               visitorProfile: visitorProfileRef.current ?? undefined,
               model: selectedModelRef.current,
+              branding: brandingRef.current,
               ...(ctx ? { pageContext: ctx } : {}),
               browsingHistory: browsingHistoryRef.current.length > 0
                 ? browsingHistoryRef.current : undefined,
@@ -234,33 +336,85 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   // ── Message listener: handles bridge init, context updates, URL clicks, prompts ──
   useEffect(() => {
-    function handleMessage(e: MessageEvent) {
+    async function handleMessage(e: MessageEvent) {
       // rtg-init: full initialization from embed.js
       if (e.data?.type === "rtg-init") {
         const data = e.data;
+        const incomingTenantKey =
+          String(data.tenantKey || getWindowChatConfig()?.tenantKey || "rtg-default").trim() ||
+          "rtg-default";
+        const incomingNamespace =
+          String(data.storageNamespace || incomingTenantKey).trim() || incomingTenantKey;
+        setStorageNamespace(incomingNamespace);
+        configureMessageStorageNamespace(incomingNamespace);
+        configureProfileStorageNamespace(incomingNamespace);
+        const incomingSessionId =
+          String(data.sessionId || "").trim() || getBrowserSessionId();
 
-        // Seed storage from host page's localStorage
-        initFromBridge(data.chatMessages || null, true);
-        initProfileFromBridge(data.visitorProfile || null, true);
-        suppressReturningRef.current = data.suppressReturning === true;
-
-        // Set page context and browsing history
+        setTenantKey(incomingTenantKey);
+        setSessionId(incomingSessionId);
+        setStorageNamespaceState(incomingNamespace);
+        hostOriginRef.current = String(data.hostOrigin || getHostOrigin()).trim() || getHostOrigin();
         if (data.pageContext) setPageContext(data.pageContext);
         if (data.browsingHistory) setBrowsingHistory(data.browsingHistory);
 
-        // Restore chat messages
-        const saved = loadMessages();
-        if (saved && saved.length > 0) {
-          setMessages(saved.map(chatMessageToUi));
-        }
+        try {
+          const bootstrap = await fetchTenantBootstrap({
+            tenantKey: incomingTenantKey,
+            sessionId: incomingSessionId,
+            hostOrigin: hostOriginRef.current,
+            localMessages: data.chatMessages || null,
+            localProfile: data.visitorProfile || null,
+          });
 
-        // Record visit
-        const profile = recordVisit({
-          productName: data.pageContext?.productName,
-          category: data.pageContext?.category,
-          purchasedProducts: data.pageContext?.purchasedProducts,
-        });
-        setVisitorProfile(profile);
+          setTenantToken(bootstrap.tenantToken);
+          setStorageNamespaceState(bootstrap.tenant.storageNamespace);
+          const nextConfig = mergeWidgetConfigLayers(
+            {
+              theme: bootstrap.tenant.theme,
+              branding: bootstrap.tenant.branding,
+            },
+            {
+              theme: data.theme,
+              branding: data.branding,
+            }
+          );
+          setWidgetConfig(nextConfig);
+
+          initFromBridge(bootstrap.session.messages || data.chatMessages || null, true);
+          initProfileFromBridge(bootstrap.session.visitorProfile || data.visitorProfile || null, true);
+          suppressReturningRef.current = data.suppressReturning === true;
+
+          const saved = loadMessages();
+          if (saved && saved.length > 0) {
+            setMessages(saved.map(chatMessageToUi));
+          } else {
+            setMessages([buildWelcomeUi(nextConfig.branding)]);
+          }
+
+          const profile = recordVisit({
+            productName: data.pageContext?.productName,
+            category: data.pageContext?.category,
+            purchasedProducts: data.pageContext?.purchasedProducts,
+          });
+          setVisitorProfile(profile);
+        } catch (error) {
+          console.error("[widget] bootstrap failed:", error);
+          const nextConfig = resolveWidgetConfig({
+            theme: data.theme,
+            branding: data.branding,
+          });
+          setWidgetConfig(nextConfig);
+          initFromBridge(data.chatMessages || null, true);
+          initProfileFromBridge(data.visitorProfile || null, true);
+          const saved = loadMessages();
+          setMessages(saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)]);
+          setVisitorProfile(recordVisit({
+            productName: data.pageContext?.productName,
+            category: data.pageContext?.category,
+            purchasedProducts: data.pageContext?.purchasedProducts,
+          }));
+        }
 
         // Handle pending product summary (Behavior A — user clicked a
         // product card inside the chat). Record the product name so State 2
@@ -502,32 +656,88 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   useEffect(() => {
     if (embed) return; // embed mode waits for rtg-init message
 
-    initFromBridge(null, false);
-    initProfileFromBridge(null, false);
+    let cancelled = false;
+    async function initStandalone() {
+      const windowConfig = getWindowChatConfig();
+      const standaloneTenantKey = windowConfig?.tenantKey?.trim() || "rtg-default";
+      setStorageNamespace(standaloneTenantKey);
+      configureMessageStorageNamespace(standaloneTenantKey);
+      configureProfileStorageNamespace(standaloneTenantKey);
+      setTenantKey(standaloneTenantKey);
+      setStorageNamespaceState(standaloneTenantKey);
+      const standaloneSessionId = getBrowserSessionId();
+      setSessionId(standaloneSessionId);
+      hostOriginRef.current = getHostOrigin();
 
-    // Load the refresh-suppression flag from localStorage (same key the
-    // embed bridge uses on the host page, so the two modes stay aligned).
-    try {
-      suppressReturningRef.current =
-        localStorage.getItem("rtg_suppress_returning") === "1";
-    } catch { /* noop */ }
+      // Load the refresh-suppression flag from localStorage (same key the
+      // embed bridge uses on the host page, so the two modes stay aligned).
+      try {
+        suppressReturningRef.current =
+          localStorage.getItem(getScopedStorageKey("suppress_returning")) === "1";
+      } catch { /* noop */ }
 
-    const saved = loadMessages();
-    if (saved && saved.length > 0) {
-      setMessages(saved.map(chatMessageToUi));
+      const localMessages = loadMessages();
+      const localProfile = loadVisitorProfile();
+
+      try {
+        const bootstrap = await fetchTenantBootstrap({
+          tenantKey: standaloneTenantKey,
+          sessionId: standaloneSessionId,
+          hostOrigin: hostOriginRef.current,
+          localMessages,
+          localProfile,
+        });
+
+        if (cancelled) return;
+        setTenantToken(bootstrap.tenantToken);
+        setStorageNamespaceState(bootstrap.tenant.storageNamespace);
+        const nextConfig = mergeWidgetConfigLayers(
+          {
+            theme: bootstrap.tenant.theme,
+            branding: bootstrap.tenant.branding,
+          },
+          windowConfig
+        );
+        setWidgetConfig(nextConfig);
+        initFromBridge(bootstrap.session.messages || null, false);
+        initProfileFromBridge(bootstrap.session.visitorProfile || null, false);
+
+        const saved = loadMessages();
+        setMessages(saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)]);
+
+        const ctx = getPageContext();
+        if (ctx) setPageContext(ctx);
+
+        const profile = recordVisit({
+          productName: ctx?.productName,
+          category: ctx?.category,
+          purchasedProducts: ctx?.purchasedProducts,
+        });
+        setVisitorProfile(profile);
+      } catch (error) {
+        console.error("[widget] standalone bootstrap failed:", error);
+        const nextConfig = resolveWidgetConfig(windowConfig);
+        setWidgetConfig(nextConfig);
+        initFromBridge(null, false);
+        initProfileFromBridge(null, false);
+        const saved = loadMessages();
+        setMessages(saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)]);
+        const ctx = getPageContext();
+        if (ctx) setPageContext(ctx);
+        setVisitorProfile(recordVisit({
+          productName: ctx?.productName,
+          category: ctx?.category,
+          purchasedProducts: ctx?.purchasedProducts,
+        }));
+      }
+
+      if (!cancelled) setLoaded(true);
     }
 
-    const ctx = getPageContext();
-    if (ctx) setPageContext(ctx);
-
-    const profile = recordVisit({
-      productName: ctx?.productName,
-      category: ctx?.category,
-      purchasedProducts: ctx?.purchasedProducts,
-    });
-    setVisitorProfile(profile);
-
-    setLoaded(true);
+    void initStandalone();
+    return () => {
+      cancelled = true;
+    };
   }, [embed, setMessages]);
 
   // Save messages whenever they change (to bridge or localStorage)
@@ -546,6 +756,31 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       );
     }
   }, [displayMessages, loaded]);
+
+  useEffect(() => {
+    if (!loaded || !tenantToken || !tenantKey || !sessionId) return;
+    const timeout = setTimeout(() => {
+      void fetch("/api/session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tenant-token": tenantToken,
+        },
+        body: JSON.stringify({
+          tenantKey,
+          sessionId,
+          hostOrigin: hostOriginRef.current,
+          lastPageUrl: typeof window !== "undefined" ? window.location.href : undefined,
+          messages: displayMessages,
+          visitorProfile: visitorProfileRef.current,
+        }),
+      }).catch((error) => {
+        console.error("[widget] session sync failed:", error);
+      });
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [displayMessages, loaded, sessionId, tenantKey, tenantToken, visitorProfile]);
 
   // Scroll to bottom when widget opens or chat is restored.
   // Product card iframes resize asynchronously (images load, content expands),
@@ -604,7 +839,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     });
   }, [lastAssistantMessageId]);
 
-  async function consumeAssistantStream(stream: ReadableStream<UIMessageChunk>) {
+  const consumeAssistantStream = useCallback(async (stream: ReadableStream<UIMessageChunk>) => {
     const assistantId = generateId();
     try {
       for await (const uiMessage of readUIMessageStream({ stream })) {
@@ -628,7 +863,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         },
       ]);
     }
-  }
+  }, [setMessages]);
 
   // Generate personalized greeting for returning visitors when widget opens
   const generateReturningGreeting = useCallback(async () => {
@@ -660,7 +895,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       setMessages([welcomeUi]);
     }
-  }, [transport, setMessages]);
+  }, [transport, setMessages, welcomeUi, consumeAssistantStream]);
 
   // Shared guard gate — every proactive trigger calls this first.
   // `mark` (default true) advances the 15s stack debounce. State 4's
@@ -745,7 +980,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch (err) {
       console.log("[proactive] contextual API call failed:", err);
     }
-  }, [transport, messages, gatedFire]);
+  }, [transport, messages, gatedFire, consumeAssistantStream]);
 
   // State 1: Fire re-engagement after 20min idle. Requires prior conversation.
   const triggerReengagement = useCallback(async () => {
@@ -769,7 +1004,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       /* swallow */
     }
-  }, [transport, messages, gatedFire]);
+  }, [transport, messages, gatedFire, consumeAssistantStream]);
 
   // State 3: Fire an interjection. Subtype selects the sub-template.
   const triggerInterjection = useCallback(async (interjectionType: string) => {
@@ -792,7 +1027,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       /* swallow */
     }
-  }, [transport, messages, gatedFire]);
+  }, [transport, messages, gatedFire, consumeAssistantStream]);
 
   // State 4: Greet on fresh session. For returning customers with prior chat
   // history, the greeting is APPENDED (history stays). For new customers with
@@ -825,7 +1060,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch (err) {
       console.log("[proactive] upsell API call failed:", err);
     }
-  }, [transport, messages, humanMode, gatedFire]);
+  }, [transport, messages, humanMode, gatedFire, consumeAssistantStream]);
 
   const triggerNewSessionGreeting = useCallback(async () => {
     // State 4 is a one-shot init greeting; don't mark the 15s debounce so
@@ -869,7 +1104,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     } catch {
       if (!hasPriorChat) setMessages([welcomeUi]);
     }
-  }, [transport, messages, setMessages, gatedFire]);
+  }, [transport, messages, setMessages, gatedFire, welcomeUi, consumeAssistantStream]);
 
   // Wire up the refs so the message handler (stable across renders) can
   // call the latest version of these callbacks.
@@ -953,36 +1188,57 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     if (embed && typeof window !== "undefined" && window.parent !== window) {
       window.parent.postMessage({ type: "rtg-set-suppress-returning" }, "*");
     } else {
-      try { localStorage.setItem("rtg_suppress_returning", "1"); }
+      try { localStorage.setItem(getScopedStorageKey("suppress_returning"), "1"); }
       catch { /* noop */ }
     }
-  }, [setMessages, embed]);
+  }, [setMessages, embed, welcomeUi]);
 
   const handleShare = useCallback(async () => {
     const shareableMessages = displayMessages.filter((m) => m.id !== "welcome");
     if (shareableMessages.length === 0) return;
 
     try {
-      const json = JSON.stringify(
-        shareableMessages.map((m) => ({ role: m.role, text: m.text }))
-      );
+      let url = "";
+      const createShortLink = await fetch("/api/share", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tenant-token": tenantTokenRef.current,
+        },
+        body: JSON.stringify({
+          tenantKey: tenantKeyRef.current,
+          messages: shareableMessages.map((m) => ({ role: m.role, text: m.text })),
+        }),
+      });
 
-      // Gzip-compress and URL-safe base64 encode so the link is
-      // self-contained (works across browsers/devices) but much shorter
-      // than raw base64.
-      const stream = new Blob([json]).stream().pipeThrough(
-        new CompressionStream("gzip")
-      );
-      const buffer = await new Response(stream).arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const encoded = btoa(binary)
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
+      if (createShortLink.ok) {
+        const payload = (await createShortLink.json()) as { id?: string };
+        if (payload.id && typeof window !== "undefined") {
+          const shared = new URL(window.location.href);
+          shared.searchParams.set("c", payload.id);
+          url = shared.toString();
+        }
+      }
 
-      const url = `https://rtg-275.myshopify.com/?chat=${encoded}`;
+      if (!url) {
+        const json = JSON.stringify(
+          shareableMessages.map((m) => ({ role: m.role, text: m.text }))
+        );
+        const stream = new Blob([json]).stream().pipeThrough(
+          new CompressionStream("gzip")
+        );
+        const buffer = await new Response(stream).arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const encoded = btoa(binary)
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+        const shared = new URL(window.location.href);
+        shared.searchParams.set("chat", encoded);
+        url = shared.toString();
+      }
 
       try {
         await navigator.clipboard.writeText(url);
@@ -1001,23 +1257,6 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     }
   }, [displayMessages]);
 
-  const HANDOFF_PHRASES = [
-    "talk to someone",
-    "talk to a person",
-    "talk to a human",
-    "speak to someone",
-    "speak to a person",
-    "speak to a human",
-    "speak to an agent",
-    "talk to an agent",
-    "human agent",
-    "real person",
-    "live agent",
-    "customer service",
-    "customer support",
-    "representative",
-  ];
-
   const triggerHandoff = useCallback(async () => {
     // 1. Show transfer message
     const transferId = generateId();
@@ -1026,7 +1265,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       {
         id: transferId,
         role: "assistant",
-        parts: [{ type: "text", text: "Sure, transferring you to a human agent." }],
+        parts: [{ type: "text", text: "Sure, connecting you to a human agent." }],
       },
     ]);
 
@@ -1089,7 +1328,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         if (embed && typeof window !== "undefined" && window.parent !== window) {
           window.parent.postMessage({ type: "rtg-clear-suppress-returning" }, "*");
         } else {
-          try { localStorage.removeItem("rtg_suppress_returning"); }
+          try { localStorage.removeItem(getScopedStorageKey("suppress_returning")); }
           catch { /* noop */ }
         }
       }
@@ -1112,7 +1351,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
       await sendMessage({ text: text.trim() });
     },
-    [sendMessage, isStreaming, humanMode, triggerHandoff, setMessages, embed]
+    [sendMessage, isStreaming, humanMode, triggerHandoff, setMessages, embed, proactive]
   );
 
   useEffect(() => {
@@ -1120,21 +1359,30 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   }, [handleSend]);
 
   return (
-    <>
+    <div style={widgetThemeStyle}>
       {/* Toggle button — Shopping Assistant pill */}
       {!isOpen && (
         <button
           onClick={handleOpen}
           className={`fixed bottom-4 right-4 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-offset-2 sm:bottom-6 sm:right-6 ${embed ? "pointer-events-auto" : ""}`}
-          style={{ backgroundColor: "var(--rtg-blue)" }}
-          aria-label="Open Shopping Assistant"
+          style={{
+            backgroundColor: "var(--widget-surface)",
+            color: "var(--widget-text)",
+            border: "1px solid var(--widget-border)",
+            boxShadow: "var(--widget-shadow)",
+          }}
+          aria-label={`Open ${widgetConfig.branding.launcherLabel}`}
         >
-          <RTGLogo size={32} />
+          <WidgetAvatar
+            size={32}
+            branding={widgetConfig.branding}
+            theme={widgetConfig.theme}
+          />
           <span
             className="text-sm font-semibold"
-            style={{ color: "white" }}
+            style={{ color: "var(--widget-text)" }}
           >
-            Shopping Assistant
+            {widgetConfig.branding.launcherLabel}
           </span>
         </button>
       )}
@@ -1143,16 +1391,18 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         <>
           <button
             type="button"
-            aria-label="Close Shopping Assistant"
+            aria-label={`Close ${widgetConfig.branding.launcherLabel}`}
             onClick={() => setIsOpen(false)}
-            className={`fixed inset-0 z-40 bg-black/10 ${embed ? "pointer-events-auto" : ""}`}
+            className={`fixed inset-0 z-40 ${embed ? "pointer-events-auto" : ""}`}
+            style={{ backgroundColor: "var(--widget-overlay)" }}
           />
 
           <div
             className={`widget-enter fixed inset-x-0 bottom-0 z-50 flex h-[80dvh] max-h-[80dvh] flex-col overflow-hidden rounded-t-[28px] shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:h-[640px] sm:max-h-[640px] sm:w-[420px] sm:rounded-2xl ${embed ? "pointer-events-auto" : ""}`}
             style={{
-              border: "1px solid var(--rtg-gray-200)",
-              backgroundColor: "white",
+              border: "1px solid var(--widget-border)",
+              backgroundColor: "var(--widget-surface)",
+              boxShadow: "var(--widget-shadow)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1160,6 +1410,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               onMinimize={() => setIsOpen(false)}
               onRefresh={handleRefresh}
               onShare={handleShare}
+              branding={widgetConfig.branding}
+              theme={widgetConfig.theme}
             />
 
             <ChatMessages
@@ -1168,6 +1420,8 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               messagesEndRef={messagesEndRef}
               lastAssistantRef={lastAssistantRef}
               scrollContainerRef={scrollContainerRef}
+              branding={widgetConfig.branding}
+              theme={widgetConfig.theme}
             />
 
             <ChatInput
@@ -1177,10 +1431,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
               humanMode={humanMode}
               onAbort={stop}
               onChipClick={handleSend}
+              branding={widgetConfig.branding}
             />
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }

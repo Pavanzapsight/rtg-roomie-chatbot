@@ -5,6 +5,8 @@
  * and saved back via postMessage. In standalone mode, uses localStorage directly.
  */
 
+import { getScopedStorageKey, setStorageNamespace } from "@/lib/browser-session";
+
 export interface VisitorProfile {
   visitCount: number;
   firstVisit: string;
@@ -16,7 +18,7 @@ export interface VisitorProfile {
   preferences: Record<string, string>;
 }
 
-const STORAGE_KEY = "rtg_visitor_profile";
+const STORAGE_KEY = "visitor_profile";
 
 let profileCache: VisitorProfile | null = null;
 let embedded = false;
@@ -56,12 +58,16 @@ export function initProfileFromBridge(
   }
 }
 
+export function configureProfileStorageNamespace(namespace: string | null | undefined) {
+  setStorageNamespace(namespace);
+}
+
 export function loadVisitorProfile(): VisitorProfile {
   if (profileCache) return profileCache;
 
   if (!embedded && typeof window !== "undefined") {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(getScopedStorageKey(STORAGE_KEY));
       if (raw) {
         const loaded: VisitorProfile = { ...emptyProfile(), ...JSON.parse(raw) };
         profileCache = loaded;
@@ -86,7 +92,7 @@ export function saveVisitorProfile(profile: VisitorProfile) {
     postToParent(trimmed);
   } else {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+      localStorage.setItem(getScopedStorageKey(STORAGE_KEY), JSON.stringify(trimmed));
     } catch { /* quota */ }
   }
 }

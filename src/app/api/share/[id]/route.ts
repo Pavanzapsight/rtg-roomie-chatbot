@@ -1,4 +1,4 @@
-import { getShare } from "@/lib/share-store";
+import { getShareLinkMessages } from "@/lib/tenant-platform";
 
 export async function GET(
   _request: Request,
@@ -13,7 +13,7 @@ export async function GET(
     });
   }
 
-  const messages = getShare(id);
+  const messages = await getShareLinkMessages(id);
   if (!messages) {
     return new Response(JSON.stringify({ error: "Not found or expired" }), {
       status: 404,

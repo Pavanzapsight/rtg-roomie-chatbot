@@ -5,8 +5,9 @@ import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { type ChatMessage } from "./ChatWidget";
 import { InlineHTML } from "./InlineHTML";
-import { RTGLogo } from "./RTGLogo";
+import { WidgetAvatar } from "./WidgetAvatar";
 import { stripStageTag } from "@/lib/stage-tag";
+import type { WidgetBranding, WidgetTheme } from "@/lib/widget-config";
 
 function TypingIndicator() {
   return (
@@ -14,8 +15,8 @@ function TypingIndicator() {
       <div
         className="flex items-center gap-1 rounded-2xl rounded-bl-sm px-4 py-3"
         style={{
-          backgroundColor: "white",
-          border: "1px solid var(--rtg-gray-200)",
+          backgroundColor: "var(--widget-surface)",
+          border: "1px solid var(--widget-border)",
         }}
       >
         <div className="typing-dot h-2 w-2 rounded-full" />
@@ -26,7 +27,6 @@ function TypingIndicator() {
   );
 }
 
-// Split text into plain markdown and HTML blocks
 interface Segment {
   type: "text" | "html";
   content: string;
@@ -53,7 +53,7 @@ function parseSegments(rawText: string): Segment[] {
   const segments: Segment[] = [];
   const htmlBlockRegex = /```html\s*\n([\s\S]*?)```/g;
   let lastIndex = 0;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = htmlBlockRegex.exec(text)) !== null) {
     if (match.index > lastIndex) {
@@ -66,13 +66,11 @@ function parseSegments(rawText: string): Segment[] {
 
   if (lastIndex < text.length) {
     let remaining = text.slice(lastIndex);
-    // Hide incomplete ```html blocks during streaming
     const incompleteStart = remaining.indexOf("```html");
     if (incompleteStart !== -1) {
       remaining = remaining.slice(0, incompleteStart);
     }
-    const trimmed = remaining.trim();
-    const cleaned = cleanTextSegment(trimmed);
+    const cleaned = cleanTextSegment(remaining.trim());
     if (cleaned) segments.push({ type: "text", content: cleaned });
   }
 
@@ -89,17 +87,17 @@ function MessageBubble({
   isLastAssistant,
   isStreaming,
   lastAssistantRef,
+  branding,
+  theme,
 }: {
   message: ChatMessage;
   isLastAssistant: boolean;
   isStreaming: boolean;
   lastAssistantRef?: React.RefObject<HTMLDivElement | null>;
+  branding: WidgetBranding;
+  theme: WidgetTheme;
 }) {
   const isUser = message.role === "user";
-
-  // Check if this is the first message in a consecutive run from the assistant
-  // (show avatar only on the first bubble in a group)
-  const showAvatar = !isUser;
 
   return (
     <div
@@ -107,15 +105,14 @@ function MessageBubble({
       className={`chat-bubble-enter flex flex-col ${isUser ? "items-end" : "items-start"} px-4 py-1.5`}
       style={!isUser && isLastAssistant ? { scrollMarginTop: "12vh" } : undefined}
     >
-      {/* Assistant avatar + label */}
-      {showAvatar && (
+      {!isUser && (
         <div className="mb-1 flex items-center gap-2 pl-1">
-          <RTGLogo size={24} />
+          <WidgetAvatar size={24} branding={branding} theme={theme} />
           <span
             className="text-[12px] font-bold"
-            style={{ color: "var(--rtg-blue)" }}
+            style={{ color: "var(--widget-accent)" }}
           >
-            Shopping Assistant
+            {branding.assistantName}
           </span>
         </div>
       )}
@@ -123,8 +120,8 @@ function MessageBubble({
         <div
           className="max-w-[88%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[15px] leading-relaxed"
           style={{
-            backgroundColor: "var(--rtg-blue-light)",
-            color: "var(--rtg-charcoal)",
+            backgroundColor: "var(--widget-user-bubble)",
+            color: "var(--widget-text)",
           }}
         >
           {message.text}
@@ -135,6 +132,7 @@ function MessageBubble({
             text={message.text}
             messageId={message.id}
             isStreaming={isLastAssistant && isStreaming}
+            theme={theme}
           />
         </div>
       )}
@@ -146,10 +144,12 @@ function FormattedMessage({
   text,
   messageId,
   isStreaming,
+  theme,
 }: {
   text: string;
   messageId: string;
   isStreaming: boolean;
+  theme: WidgetTheme;
 }) {
   const segments = useMemo(() => parseSegments(text), [text]);
   const content: React.ReactNode[] = [];
@@ -182,6 +182,7 @@ function FormattedMessage({
               <InlineHTML
                 html={cardSeg.content}
                 id={`${messageId}-${idx}-${cardIdx}`}
+                theme={theme}
               />
             </div>
           ))}
@@ -196,16 +197,13 @@ function FormattedMessage({
       content.push(
         <div
           key={`${messageId}-html-shell-${idx}`}
-          className={
-            isPillRow
-              ? ""
-              : "rounded-2xl border border-[var(--rtg-gray-200)] bg-white px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-          }
+          className={isPillRow ? "" : "px-1 py-1"}
         >
           <InlineHTML
             key={`${messageId}-html-${idx}`}
             html={seg.content}
             id={`${messageId}-${idx}`}
+            theme={theme}
           />
         </div>
       );
@@ -215,7 +213,12 @@ function FormattedMessage({
     content.push(
       <div
         key={`${messageId}-text-${idx}`}
-        className="streamdown-content rounded-2xl border border-[#E8E8E8] bg-[var(--rtg-gray-50)] px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+        className="streamdown-content rounded-2xl px-4 py-3"
+        style={{
+          border: "1px solid var(--widget-border)",
+          backgroundColor: "var(--widget-assistant-bubble)",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        }}
       >
         <Streamdown
           mode={isStreaming ? "streaming" : "static"}
@@ -227,7 +230,7 @@ function FormattedMessage({
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "var(--rtg-blue)", textDecoration: "underline" }}
+                style={{ color: "var(--widget-accent)", textDecoration: "underline" }}
                 {...rest}
               >
                 {children}
@@ -250,14 +253,17 @@ export function ChatMessages({
   messagesEndRef,
   lastAssistantRef,
   scrollContainerRef,
+  branding,
+  theme,
 }: {
   messages: ChatMessage[];
   isStreaming: boolean;
   messagesEndRef: RefObject<HTMLDivElement | null>;
   lastAssistantRef?: RefObject<HTMLDivElement | null>;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  branding: WidgetBranding;
+  theme: WidgetTheme;
 }) {
-  // Find the last assistant message index for streaming indicator
   let lastAssistantIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "assistant") {
@@ -271,7 +277,7 @@ export function ChatMessages({
       ref={scrollContainerRef}
       className="chat-messages flex-1 overflow-y-auto py-3"
       style={{
-        backgroundColor: "var(--rtg-gray-100)",
+        backgroundColor: "var(--widget-surface-alt)",
         overscrollBehavior: "contain",
       }}
     >
@@ -282,6 +288,8 @@ export function ChatMessages({
           isLastAssistant={i === lastAssistantIdx}
           isStreaming={isStreaming}
           lastAssistantRef={lastAssistantRef}
+          branding={branding}
+          theme={theme}
         />
       ))}
       {isStreaming && messages[messages.length - 1]?.role === "user" && (

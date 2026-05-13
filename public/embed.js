@@ -1,5 +1,5 @@
 /**
- * Rooms To Go — Roomie Shopping Assistant embed script.
+ * Storefront Shopping Assistant embed script.
  *
  * Drop this single <script> tag on any Shopify (or other) page:
  *   <script src="https://rtg-roomie-chatbot.vercel.app/embed.js" defer></script>
@@ -15,20 +15,21 @@
 
   // ─── Constants ────────────────────────────────────────────────────────
   var STORAGE = {
-    SESSION:    "rtg_session_id",
-    CHAT:       "rtg_chat_messages",
-    HISTORY:    "rtg_browsing_history",
-    PENDING:    "rtg_pending_product",
-    PROFILE:    "rtg_visitor_profile",
-    WIDGET_OPEN:"rtg_widget_open",
+    SESSION:    "session_id",
+    CHAT:       "chat_messages",
+    HISTORY:    "browsing_history",
+    PENDING:    "pending_product",
+    PROFILE:    "visitor_profile",
+    WIDGET_OPEN:"widget_open",
     // Set to "1" when the user explicitly clicks the in-chat refresh icon.
     // Suppresses "Welcome back, you were looking for X..." greetings until
     // the user sends their first message (then the iframe postMessages to
     // clear it). Persists across page navigations and sessions.
-    SUPPRESS_RETURNING: "rtg_suppress_returning",
+    SUPPRESS_RETURNING: "suppress_returning",
   };
   var MAX_HISTORY = 30;
   var MSG_CONTEXT = "rtg-page-context-update";
+  var SESSION_STATE_PREFIX = "rtg_session";
 
   // ─── Helpers ──────────────────────────────────────────────────────────
   function uid() {
@@ -36,23 +37,179 @@
   }
 
   function safeGet(key) {
-    try { return localStorage.getItem(key); } catch (_) { return null; }
+    try { return localStorage.getItem(key); } catch { return null; }
   }
   function safeSet(key, val) {
-    try { localStorage.setItem(key, val); } catch (_) { /* quota */ }
+    try { localStorage.setItem(key, val); } catch { /* quota */ }
   }
   function safeRemove(key) {
-    try { localStorage.removeItem(key); } catch (_) { /* noop */ }
+    try { localStorage.removeItem(key); } catch { /* noop */ }
   }
   function safeJSON(raw) {
     if (!raw) return null;
-    try { return JSON.parse(raw); } catch (_) { return null; }
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  function parseJSON(raw) {
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  function mergeConfig(base, override) {
+    var next = {
+      tenantKey: (base && base.tenantKey) || "",
+      shopDomain: (base && base.shopDomain) || "",
+      theme: Object.assign({}, base && base.theme),
+      branding: Object.assign({}, base && base.branding),
+    };
+    if (override && typeof override.tenantKey === "string" && override.tenantKey.trim()) {
+      next.tenantKey = override.tenantKey.trim();
+    }
+    if (override && typeof override.shopDomain === "string" && override.shopDomain.trim()) {
+      next.shopDomain = override.shopDomain.trim();
+    }
+    if (override && override.theme && typeof override.theme === "object") {
+      next.theme = Object.assign(next.theme, override.theme);
+    }
+    if (override && override.branding && typeof override.branding === "object") {
+      next.branding = Object.assign(next.branding, override.branding);
+    }
+    return next;
+  }
+  function getEmbedScript() {
+    if (document.currentScript && /\/embed\.js(?:\?|$)/.test(document.currentScript.src || "")) {
+      return document.currentScript;
+    }
+    var scripts = document.getElementsByTagName("script");
+    for (var i = scripts.length - 1; i >= 0; i--) {
+      if (/\/embed\.js(?:\?|$)/.test(scripts[i].src || "")) {
+        return scripts[i];
+      }
+    }
+    return null;
+  }
+  function readScriptConfig() {
+    var script = getEmbedScript();
+    if (!script) return null;
+    var scriptUrl = "";
+    try { scriptUrl = script.src ? new URL(script.src, window.location.href).toString() : ""; } catch { scriptUrl = script.src || ""; }
+    var scriptSearch = "";
+    try { scriptSearch = scriptUrl ? new URL(scriptUrl).search : ""; } catch { scriptSearch = ""; }
+    var scriptParams = new URLSearchParams(scriptSearch || "");
+
+    var tenantKey = script.dataset.tenantKey || "";
+    var shopDomain = script.dataset.shop || scriptParams.get("shop") || "";
+    var theme = {};
+    var branding = {};
+    var themeJson = parseJSON(script.dataset.theme);
+    var brandingJson = parseJSON(script.dataset.branding);
+    if (themeJson && typeof themeJson === "object") {
+      theme = Object.assign(theme, themeJson);
+    }
+    if (brandingJson && typeof brandingJson === "object") {
+      branding = Object.assign(branding, brandingJson);
+    }
+
+    if (script.dataset.accent) theme.accent = script.dataset.accent;
+    if (script.dataset.accentHover) theme.accentHover = script.dataset.accentHover;
+    if (script.dataset.accentText) theme.accentText = script.dataset.accentText;
+    if (script.dataset.surface) theme.surface = script.dataset.surface;
+    if (script.dataset.surfaceAlt) theme.surfaceAlt = script.dataset.surfaceAlt;
+    if (script.dataset.text) theme.text = script.dataset.text;
+    if (script.dataset.textMuted) theme.textMuted = script.dataset.textMuted;
+    if (script.dataset.border) theme.border = script.dataset.border;
+    if (script.dataset.overlay) theme.overlay = script.dataset.overlay;
+    if (script.dataset.userBubble) theme.userBubble = script.dataset.userBubble;
+    if (script.dataset.assistantBubble) theme.assistantBubble = script.dataset.assistantBubble;
+    if (script.dataset.success) theme.success = script.dataset.success;
+    if (script.dataset.danger) theme.danger = script.dataset.danger;
+    if (script.dataset.focus) theme.focus = script.dataset.focus;
+    if (script.dataset.fontFamily) theme.fontFamily = script.dataset.fontFamily;
+    if (script.dataset.radius) theme.radius = script.dataset.radius;
+    if (script.dataset.shadow) theme.shadow = script.dataset.shadow;
+
+    if (script.dataset.assistantName) branding.assistantName = script.dataset.assistantName;
+    if (script.dataset.launcherLabel) branding.launcherLabel = script.dataset.launcherLabel;
+    if (script.dataset.headerTitle) branding.headerTitle = script.dataset.headerTitle;
+    if (script.dataset.inputPlaceholder) branding.inputPlaceholder = script.dataset.inputPlaceholder;
+    if (script.dataset.humanModeBannerText) branding.humanModeBannerText = script.dataset.humanModeBannerText;
+    if (script.dataset.quickChips) {
+      branding.quickChips = script.dataset.quickChips
+        .split("|")
+        .map(function (item) { return item.trim(); })
+        .filter(Boolean);
+    }
+    if (script.dataset.logoMode) branding.logoMode = script.dataset.logoMode;
+    if (script.dataset.logoUrl) branding.logoUrl = script.dataset.logoUrl;
+    if (script.dataset.logoAlt) branding.logoAlt = script.dataset.logoAlt;
+
+    if (!tenantKey && Object.keys(theme).length === 0 && Object.keys(branding).length === 0) {
+      return shopDomain ? { tenantKey: "", shopDomain: shopDomain, theme: theme, branding: branding } : null;
+    }
+
+    return { tenantKey: tenantKey, shopDomain: shopDomain, theme: theme, branding: branding };
+  }
+
+  function normalizeShopDomain(value) {
+    var raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    try {
+      return new URL(raw).hostname.toLowerCase();
+    } catch {
+      return raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    }
+  }
+
+  function resolveOrigin() {
+    var script = getEmbedScript();
+    if (script && script.src) {
+      try { return new URL(script.src, window.location.href).origin; } catch { /* noop */ }
+    }
+    var scripts = document.querySelectorAll("script[src]");
+    for (var i = 0; i < scripts.length; i++) {
+      if (/embed\.js|theme-embed/.test(scripts[i].src || "")) {
+        try { return new URL(scripts[i].src).origin; } catch { /* noop */ }
+      }
+    }
+    return "";
+  }
+
+  function fetchPublicConfig(origin, shopDomain) {
+    if (!origin || !shopDomain) return Promise.resolve(null);
+    return fetch(origin + "/api/widget/public-config?shop=" + encodeURIComponent(shopDomain), {
+      credentials: "omit",
+    })
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .catch(function () { return null; });
+  }
+
+  var scriptConfig = readScriptConfig();
+  var windowConfig =
+    window.RTG_CHAT_CONFIG && typeof window.RTG_CHAT_CONFIG === "object"
+      ? window.RTG_CHAT_CONFIG
+      : null;
+  var widgetConfig = mergeConfig(scriptConfig, windowConfig);
+  var origin = resolveOrigin();
+  var shopDomain = normalizeShopDomain(
+    widgetConfig.shopDomain ||
+    (window.Shopify && (window.Shopify.shop || window.Shopify.shopDomain)) ||
+    window.location.hostname
+  );
+  var tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
+  var storageNamespace = tenantKey;
+
+  function scopedStorageKey(base) {
+    return storageNamespace + ":" + base;
+  }
+
+  function scopedSessionKey(base) {
+    return SESSION_STATE_PREFIX + ":" + storageNamespace + ":" + base;
   }
 
   // ─── Session ID (first-party localStorage) ───────────────────────────
   function getSessionId() {
-    var sid = safeGet(STORAGE.SESSION);
-    if (!sid) { sid = uid(); safeSet(STORAGE.SESSION, sid); }
+    var sid = safeGet(scopedStorageKey(STORAGE.SESSION));
+    if (!sid) { sid = uid(); safeSet(scopedStorageKey(STORAGE.SESSION), sid); }
     return sid;
   }
 
@@ -212,7 +369,7 @@
 
   // ─── Browsing History ─────────────────────────────────────────────────
   function getBrowsingHistory() {
-    return safeJSON(safeGet(STORAGE.HISTORY)) || [];
+    return safeJSON(safeGet(scopedStorageKey(STORAGE.HISTORY))) || [];
   }
 
   function trackPageView(ctx) {
@@ -233,12 +390,12 @@
     // Trim
     if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
 
-    safeSet(STORAGE.HISTORY, JSON.stringify(history));
+    safeSet(scopedStorageKey(STORAGE.HISTORY), JSON.stringify(history));
   }
 
   // ─── Visitor Profile ──────────────────────────────────────────────────
   function getVisitorProfile() {
-    return safeJSON(safeGet(STORAGE.PROFILE)) || null;
+    return safeJSON(safeGet(scopedStorageKey(STORAGE.PROFILE))) || null;
   }
 
   // ─── Shared Chat ─────────────────────────────────────────────────────
@@ -309,15 +466,6 @@
 
   // ─── Main Inject ──────────────────────────────────────────────────────
   function inject() {
-    // Determine embed origin from the script tag src
-    var scripts = document.querySelectorAll("script[src]");
-    var origin = "";
-    for (var i = 0; i < scripts.length; i++) {
-      if (/embed\.js/.test(scripts[i].src)) {
-        origin = new URL(scripts[i].src).origin;
-        break;
-      }
-    }
     if (!origin) return;
 
     var sessionId = getSessionId();
@@ -327,10 +475,10 @@
     // ─── Session tracking (State 3 & State 4) ─────────────────────────
     // sessionStorage is host-page scoped, cleared when ALL tabs close.
     function getSessionVal(k) {
-      try { return sessionStorage.getItem(k); } catch (_) { return null; }
+      try { return sessionStorage.getItem(k); } catch { return null; }
     }
     function setSessionVal(k, v) {
-      try { sessionStorage.setItem(k, v); } catch (_) { /* noop */ }
+      try { sessionStorage.setItem(k, v); } catch { /* noop */ }
     }
     // Sessions are bounded — if the tab has been open for more than 6
     // hours (browser left idle overnight, etc.), treat it as a new
@@ -338,10 +486,10 @@
     // from sessionStartedAt) would all be "already exceeded" and fire
     // immediately on any interaction.
     var MAX_SESSION_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
-    var isNewSession = !getSessionVal("rtg_session_marker");
+    var isNewSession = !getSessionVal(scopedSessionKey("marker"));
     var sessionStartedAt;
     if (!isNewSession) {
-      var existingStartedAt = parseInt(getSessionVal("rtg_session_started_at") || "0", 10);
+      var existingStartedAt = parseInt(getSessionVal(scopedSessionKey("started_at")) || "0", 10);
       if (!existingStartedAt || (Date.now() - existingStartedAt) > MAX_SESSION_AGE_MS) {
         // Session went stale — reset as if it were a new session.
         isNewSession = true;
@@ -349,18 +497,18 @@
     }
     if (isNewSession) {
       sessionStartedAt = Date.now();
-      setSessionVal("rtg_session_marker", "1");
-      setSessionVal("rtg_session_started_at", String(sessionStartedAt));
-      setSessionVal("rtg_state3_count", "0");
-      setSessionVal("rtg_last_interjection_at", "0");
+      setSessionVal(scopedSessionKey("marker"), "1");
+      setSessionVal(scopedSessionKey("started_at"), String(sessionStartedAt));
+      setSessionVal(scopedSessionKey("state3_count"), "0");
+      setSessionVal(scopedSessionKey("last_interjection_at"), "0");
     } else {
-      sessionStartedAt = parseInt(getSessionVal("rtg_session_started_at") || String(Date.now()), 10);
+      sessionStartedAt = parseInt(getSessionVal(scopedSessionKey("started_at")) || String(Date.now()), 10);
     }
 
     // Multi-tab greeting lock: sessionStorage is per-tab, so opening a
     // second tab would otherwise trigger another State 4 greeting. Use a
     // shared localStorage timestamp to suppress greetings within 60s.
-    var LAST_GREETING_KEY = "rtg_last_greeting_at";
+    var LAST_GREETING_KEY = scopedStorageKey("last_greeting_at");
     var GREETING_COOLDOWN_MS = 60_000;
     if (isNewSession) {
       var lastGreetingAt = parseInt(safeGet(LAST_GREETING_KEY) || "0", 10);
@@ -372,18 +520,20 @@
       }
     }
     function getState3Count() {
-      return parseInt(getSessionVal("rtg_state3_count") || "0", 10);
+      return parseInt(getSessionVal(scopedSessionKey("state3_count")) || "0", 10);
     }
     function incState3Count() {
       var n = getState3Count() + 1;
-      setSessionVal("rtg_state3_count", String(n));
+      setSessionVal(scopedSessionKey("state3_count"), String(n));
       return n;
     }
 
     // ── Create iframe ──
     var iframe = document.createElement("iframe");
-    iframe.src = origin + "/embed";
-    iframe.title = "Shopping Assistant";
+    iframe.src = origin + "/embed?tenantKey=" + encodeURIComponent(tenantKey);
+    iframe.title =
+      (widgetConfig.branding && (widgetConfig.branding.headerTitle || widgetConfig.branding.launcherLabel))
+      || "Shopping Assistant";
     // Start small (just enough for the toggle button), expand when widget opens
     var CLOSED_STYLE = [
       "position:fixed",
@@ -413,7 +563,7 @@
 
     // Restore previous widget open/closed state so the iframe loads at the
     // right size (no flash of the small pill when the chat was open).
-    var wasOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    var wasOpen = safeGet(scopedStorageKey(STORAGE.WIDGET_OPEN)) === "1";
     iframe.setAttribute("style", wasOpen ? OPEN_STYLE : CLOSED_STYLE);
     iframe.setAttribute("allow", "clipboard-write");
 
@@ -429,8 +579,8 @@
       ready = true;
 
       var sharedInput = getSharedChatInput();
-      var localChat = safeJSON(safeGet(STORAGE.CHAT));
-      var pending = safeJSON(safeGet(STORAGE.PENDING));
+      var localChat = safeJSON(safeGet(scopedStorageKey(STORAGE.CHAT)));
+      var pending = safeJSON(safeGet(scopedStorageKey(STORAGE.PENDING)));
       var profile = getVisitorProfile();
       var history = getBrowsingHistory();
 
@@ -446,7 +596,12 @@
           isSharedChat: !!isSharedChat,
           widgetOpen: wasOpen,
           isNewSession: isNewSession,
-          suppressReturning: safeGet(STORAGE.SUPPRESS_RETURNING) === "1",
+          suppressReturning: safeGet(scopedStorageKey(STORAGE.SUPPRESS_RETURNING)) === "1",
+          tenantKey: tenantKey,
+          storageNamespace: storageNamespace,
+          hostOrigin: window.location.origin,
+          theme: widgetConfig.theme,
+          branding: widgetConfig.branding,
         });
         // Only fire State 4 greeting on the first tab's first load — not
         // on subsequent loads in the same session.
@@ -469,7 +624,7 @@
       }
 
       // Clear pending product after sending
-      if (pending) safeRemove(STORAGE.PENDING);
+      if (pending) safeRemove(scopedStorageKey(STORAGE.PENDING));
 
       // Fetch enriched product details (async) and send as update
       if (pageContext.productHandle) {
@@ -499,7 +654,7 @@
         case "rtg-navigate":
           // Save pending product before navigating
           if (e.data.pendingProduct) {
-            safeSet(STORAGE.PENDING, JSON.stringify(e.data.pendingProduct));
+            safeSet(scopedStorageKey(STORAGE.PENDING), JSON.stringify(e.data.pendingProduct));
           }
           if (typeof e.data.url === "string") {
             window.location.href = e.data.url;
@@ -508,42 +663,42 @@
 
         case "rtg-save-messages":
           if (e.data.messages) {
-            safeSet(STORAGE.CHAT, JSON.stringify(e.data.messages));
+            safeSet(scopedStorageKey(STORAGE.CHAT), JSON.stringify(e.data.messages));
           }
           break;
 
         case "rtg-save-profile":
           if (e.data.profile) {
-            safeSet(STORAGE.PROFILE, JSON.stringify(e.data.profile));
+            safeSet(scopedStorageKey(STORAGE.PROFILE), JSON.stringify(e.data.profile));
           }
           break;
 
         case "rtg-clear-messages":
-          safeRemove(STORAGE.CHAT);
+          safeRemove(scopedStorageKey(STORAGE.CHAT));
           break;
 
         case "rtg-set-suppress-returning":
           // Customer clicked in-chat refresh — suppress returning-style
           // greetings until they actually send a message.
-          safeSet(STORAGE.SUPPRESS_RETURNING, "1");
+          safeSet(scopedStorageKey(STORAGE.SUPPRESS_RETURNING), "1");
           break;
 
         case "rtg-clear-suppress-returning":
           // Customer just sent their first message after a refresh —
           // they're engaging again, so personalization can resume.
-          safeRemove(STORAGE.SUPPRESS_RETURNING);
+          safeRemove(scopedStorageKey(STORAGE.SUPPRESS_RETURNING));
           break;
 
         case "rtg-widget-open":
           iframe.setAttribute("style", OPEN_STYLE);
-          safeSet(STORAGE.WIDGET_OPEN, "1");
+          safeSet(scopedStorageKey(STORAGE.WIDGET_OPEN), "1");
           chatIsOpen = true;
           stopState3();
           break;
 
         case "rtg-widget-close":
           iframe.setAttribute("style", CLOSED_STYLE);
-          safeSet(STORAGE.WIDGET_OPEN, "0");
+          safeSet(scopedStorageKey(STORAGE.WIDGET_OPEN), "0");
           chatIsOpen = false;
           // Option A: restart the State 3 schedule from the close moment.
           // The user explicitly closed — don't pop open again right away
@@ -551,7 +706,7 @@
           // a threshold. Next interjection waits from "now" under the same
           // escalating cadence (1m / 3m / 8m for counts 0 / 1 / 2).
           sessionStartedAt = Date.now();
-          setSessionVal("rtg_session_started_at", String(sessionStartedAt));
+          setSessionVal(scopedSessionKey("started_at"), String(sessionStartedAt));
           startState3();
           break;
 
@@ -592,7 +747,7 @@
                 if (t) {
                   try {
                     body = JSON.parse(t);
-                  } catch (_) {
+                  } catch {
                     body = { message: t.slice(0, 200) };
                   }
                 }
@@ -642,7 +797,7 @@
                     document.dispatchEvent(
                       new CustomEvent(name, { bubbles: true, detail: res.body || {} })
                     );
-                  } catch (_) { /* older browsers */ }
+                  } catch { /* older browsers */ }
                 });
                 // Also try the most common theme-defined JS refresh hooks.
                 try {
@@ -654,7 +809,7 @@
                   if (window.CartJS && typeof window.CartJS.getCart === "function") {
                     window.CartJS.getCart();
                   }
-                } catch (_) { /* ignore */ }
+                } catch { /* ignore */ }
               }
             })
             .catch(function () {
@@ -737,7 +892,7 @@
     var STATE3_RECURRING_GAP_MS = 120_000; // 2 min after the 3rd
     var STATE3_CHECK_INTERVAL = 5_000;     // tighter so 20s is accurate
     var STATE3_NAV_GUARD_MS = 8_000;
-    var STATE3_LAST_INTERJECTION_KEY = "rtg_last_interjection_at";
+    var STATE3_LAST_INTERJECTION_KEY = scopedSessionKey("last_interjection_at");
 
     function getLastInterjectionAt() {
       return parseInt(getSessionVal(STATE3_LAST_INTERJECTION_KEY) || "0", 10);
@@ -746,12 +901,12 @@
       setSessionVal(STATE3_LAST_INTERJECTION_KEY, String(t));
     }
 
-    var chatIsOpen = safeGet(STORAGE.WIDGET_OPEN) === "1";
+    var chatIsOpen = safeGet(scopedStorageKey(STORAGE.WIDGET_OPEN)) === "1";
     var state3Interval = null;
 
     // Heuristic: which interjection type fits the current browsing/chat state?
     function pickInterjectionType() {
-      var chatMessages = safeJSON(safeGet(STORAGE.CHAT)) || [];
+      var chatMessages = safeJSON(safeGet(scopedStorageKey(STORAGE.CHAT))) || [];
       var userMsgs = chatMessages.filter(function (m) { return m && m.role === "user"; });
       var productsViewed = getBrowsingHistory().length;
       var isPdp = pageContext && pageContext.page === "pdp" && pageContext.productName;
@@ -831,7 +986,25 @@
     };
   }
 
+  function start() {
+    if (widgetConfig.tenantKey || !shopDomain || !origin) {
+      tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
+      storageNamespace = tenantKey;
+      inject();
+      return;
+    }
+
+    fetchPublicConfig(origin, shopDomain).then(function (publicConfig) {
+      if (publicConfig && typeof publicConfig === "object") {
+        widgetConfig = mergeConfig(publicConfig, widgetConfig);
+      }
+      tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
+      storageNamespace = tenantKey;
+      inject();
+    });
+  }
+
   // ── Boot ──
-  if (document.body) inject();
-  else document.addEventListener("DOMContentLoaded", inject);
+  if (document.body) start();
+  else document.addEventListener("DOMContentLoaded", start);
 })();

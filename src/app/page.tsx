@@ -5,20 +5,20 @@ export default function Home() {
   return (
     <main
       className="flex min-h-screen flex-col items-center justify-center"
-      style={{ backgroundColor: "#f5f5f5" }}
+      style={{ backgroundColor: "var(--widget-surface-alt)" }}
     >
       <div className="text-center">
         <h1
           className="text-3xl font-bold"
-          style={{ color: "var(--rtg-charcoal)" }}
+          style={{ color: "var(--widget-text)" }}
         >
-          RoomsToGo.com
+          Storefront Demo
         </h1>
         <p
           className="mt-2 text-base"
-          style={{ color: "var(--rtg-gray-700)" }}
+          style={{ color: "var(--widget-text-muted)" }}
         >
-          Demo page — the Roomie chat widget is in the bottom-right corner
+          Demo page — the shopping assistant widget is in the bottom-right corner
         </p>
       </div>
 

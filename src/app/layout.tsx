@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rooms To Go — Roomie Mattress Advisor",
+  title: "Shopping Assistant Demo",
   description:
-    "Chat with Roomie, your Rooms To Go virtual mattress advisor. Find the perfect mattress for the way you sleep.",
+    "Preview a reusable storefront shopping assistant widget with configurable theming and branding.",
 };
 
 export default function RootLayout({

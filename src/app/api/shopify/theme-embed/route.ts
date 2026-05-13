@@ -1,0 +1,56 @@
+import { NextRequest } from "next/server";
+
+function clean(value: string | null | undefined): string {
+  return String(value || "").trim();
+}
+
+export async function GET(request: NextRequest) {
+  const shop = clean(request.nextUrl.searchParams.get("shop"));
+  if (!shop) {
+    return new Response("console.error('RTG theme embed: missing shop parameter.');", {
+      headers: {
+        "Content-Type": "application/javascript; charset=utf-8",
+      },
+      status: 400,
+    });
+  }
+
+  const origin = request.nextUrl.origin;
+  const scriptUrl = new URL("/embed.js", origin);
+  scriptUrl.searchParams.set("shop", shop);
+
+  const config = {
+    shopDomain: shop,
+    theme: {
+      accent: clean(request.nextUrl.searchParams.get("accent")) || undefined,
+      accentText: clean(request.nextUrl.searchParams.get("accentText")) || undefined,
+    },
+    branding: {
+      launcherLabel: clean(request.nextUrl.searchParams.get("launcherLabel")) || undefined,
+      headerTitle: clean(request.nextUrl.searchParams.get("headerTitle")) || undefined,
+      assistantName: clean(request.nextUrl.searchParams.get("assistantName")) || undefined,
+      inputPlaceholder: clean(request.nextUrl.searchParams.get("inputPlaceholder")) || undefined,
+    },
+  };
+
+  const body = `
+(function () {
+  var cfg = ${JSON.stringify(config)};
+  window.RTG_CHAT_CONFIG = Object.assign({}, window.RTG_CHAT_CONFIG || {}, cfg, {
+    theme: Object.assign({}, (window.RTG_CHAT_CONFIG && window.RTG_CHAT_CONFIG.theme) || {}, cfg.theme || {}),
+    branding: Object.assign({}, (window.RTG_CHAT_CONFIG && window.RTG_CHAT_CONFIG.branding) || {}, cfg.branding || {})
+  });
+  var script = document.createElement('script');
+  script.src = ${JSON.stringify(scriptUrl.toString())};
+  script.defer = true;
+  script.setAttribute('data-shop', ${JSON.stringify(shop)});
+  document.head.appendChild(script);
+})();`;
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=60, s-maxage=300",
+    },
+  });
+}

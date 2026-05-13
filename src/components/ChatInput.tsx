@@ -1,13 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, type KeyboardEvent } from "react";
-
-const QUICK_CHIPS = [
-  "Help me find the right fit",
-  "My back has been hurting",
-  "Just browsing",
-  "What's popular?",
-];
+import type { WidgetBranding } from "@/lib/widget-config";
 
 export function ChatInput({
   onSend,
@@ -16,6 +10,7 @@ export function ChatInput({
   humanMode,
   onAbort,
   onChipClick,
+  branding,
 }: {
   onSend: (text: string) => void;
   disabled: boolean;
@@ -23,12 +18,12 @@ export function ChatInput({
   humanMode?: boolean;
   onAbort: () => void | Promise<void>;
   onChipClick: (text: string) => void;
+  branding: WidgetBranding;
 }) {
   const [input, setInput] = useState("");
   const [showChips, setShowChips] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-focus the input when not disabled
   useEffect(() => {
     if (!disabled && inputRef.current) {
       inputRef.current.focus();
@@ -57,44 +52,45 @@ export function ChatInput({
   return (
     <div
       style={{
-        borderTop: "1px solid var(--rtg-gray-200)",
-        backgroundColor: "white",
+        borderTop: "1px solid var(--widget-border)",
+        backgroundColor: "var(--widget-surface)",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      {/* Human mode banner */}
       {humanMode && (
         <div
-          className="px-4 py-2 text-xs font-medium text-center"
-          style={{ backgroundColor: "#f0f7ff", color: "var(--rtg-blue)" }}
+          className="px-4 py-2 text-center text-xs font-medium"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--widget-surface-alt) 82%, white 18%)",
+            color: "var(--widget-accent)",
+          }}
         >
-          You are now connected to a human agent. Refresh to resume AI assistant.
+          {branding.humanModeBannerText}
         </div>
       )}
 
-      {/* Quick reply chips */}
-      {showChips && !humanMode && (
+      {showChips && !humanMode && branding.quickChips.length > 0 && (
         <div className="flex flex-wrap gap-2 px-4 pt-3">
-          {QUICK_CHIPS.map((chip) => (
+          {branding.quickChips.map((chip) => (
             <button
               key={chip}
               onClick={() => handleChipClick(chip)}
               disabled={disabled}
-              className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:text-white disabled:opacity-50"
+              className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
               style={{
-                borderColor: "var(--rtg-blue)",
-                color: "var(--rtg-blue)",
-                backgroundColor: "white",
+                borderColor: "var(--widget-border)",
+                color: "var(--widget-text)",
+                backgroundColor: "var(--widget-surface)",
               }}
               onMouseEnter={(e) => {
                 if (!disabled) {
-                  e.currentTarget.style.backgroundColor = "var(--rtg-blue)";
-                  e.currentTarget.style.color = "white";
+                  e.currentTarget.style.backgroundColor = "var(--widget-surface-alt)";
+                  e.currentTarget.style.borderColor = "var(--widget-accent)";
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "white";
-                e.currentTarget.style.color = "var(--rtg-blue)";
+                e.currentTarget.style.backgroundColor = "var(--widget-surface)";
+                e.currentTarget.style.borderColor = "var(--widget-border)";
               }}
             >
               {chip}
@@ -103,7 +99,6 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Input area */}
       <div className="flex items-end gap-2 p-3">
         <textarea
           autoFocus
@@ -111,14 +106,14 @@ export function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={humanMode ? "Chatting with a human agent..." : "Ask about mattresses..."}
+          placeholder={humanMode ? "Chatting with a human agent..." : branding.inputPlaceholder}
           disabled={disabled}
           rows={1}
           className="flex-1 resize-none rounded-xl px-4 py-2.5 text-[15px] leading-relaxed placeholder:text-gray-400 disabled:opacity-50"
           style={{
-            border: "1px solid var(--rtg-gray-200)",
-            color: "var(--rtg-charcoal)",
-            backgroundColor: "var(--rtg-gray-50)",
+            border: "1px solid var(--widget-border)",
+            color: "var(--widget-text)",
+            backgroundColor: "var(--widget-surface-alt)",
             maxHeight: 100,
             outline: "none",
           }}
@@ -133,7 +128,7 @@ export function ChatInput({
             type="button"
             onClick={onAbort}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors"
-            style={{ backgroundColor: "var(--rtg-red)" }}
+            style={{ backgroundColor: "var(--widget-danger)" }}
             aria-label="Stop generating"
           >
             <svg
@@ -155,8 +150,8 @@ export function ChatInput({
             style={{
               backgroundColor:
                 disabled || !input.trim()
-                  ? "var(--rtg-gray-200)"
-                  : "var(--rtg-blue)",
+                  ? "var(--widget-border)"
+                  : "var(--widget-accent)",
             }}
             aria-label="Send message"
           >

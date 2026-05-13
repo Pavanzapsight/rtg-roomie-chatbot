@@ -1,0 +1,103 @@
+import type { WidgetBranding, WidgetTheme } from "@/lib/widget-config";
+import type { PersistedChatMessage } from "@/lib/chat-types";
+import type { VisitorProfile } from "@/lib/visitor-profile";
+
+export type CatalogSourceType = "excel" | "postgres" | "shopify";
+
+export interface TenantAiConfig {
+  businessSummary?: string;
+  brandVoice?: string;
+  targetAudience?: string;
+  salesPolicy?: string;
+  supportPolicy?: string;
+  extraInstructions?: string;
+}
+
+export type ShopifyInstallStatus = "pending" | "installed" | "uninstalled";
+
+export interface ShopifyInstallationRecord {
+  id: string;
+  tenantId: string;
+  shopDomain: string;
+  storefrontDomain?: string | null;
+  accessToken: string;
+  scopes: string[];
+  status: ShopifyInstallStatus;
+  shopName?: string | null;
+  shopOwner?: string | null;
+  email?: string | null;
+  currencyCode?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  uninstalledAt?: string | null;
+}
+
+export interface TenantPromptConfig {
+  brandName: string;
+  websiteUrl?: string;
+  supportUrl?: string;
+  storeLocatorUrl?: string;
+  handoffDescription?: string;
+}
+
+export interface TenantRuntimeConfig {
+  tenantId: string;
+  tenantKey: string;
+  name: string;
+  storageNamespace: string;
+  appName: string;
+  appUrl: string;
+  theme: Partial<WidgetTheme>;
+  branding: Partial<WidgetBranding>;
+  prompt: TenantPromptConfig;
+  aiConfig: TenantAiConfig;
+}
+
+export interface TenantRecord extends TenantRuntimeConfig {
+  allowedDomains: string[];
+  shopifyInstallation?: ShopifyInstallationRecord | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SessionState {
+  sessionId: string;
+  messages: PersistedChatMessage[];
+  visitorProfile: VisitorProfile | null;
+  updatedAt?: string;
+}
+
+export interface TenantBootstrap {
+  tenant: TenantRuntimeConfig;
+  tenantToken: string;
+  session: SessionState;
+}
+
+export interface CatalogDataset {
+  headers: string[];
+  rows: Record<string, string>[];
+  fullCatalogText: string;
+}
+
+export interface CatalogVersionRecord {
+  id: string;
+  tenantId: string;
+  sourceId: string | null;
+  sourceType: CatalogSourceType;
+  label: string;
+  rowCount: number;
+  isActive: boolean;
+  createdAt: string;
+  activatedAt?: string | null;
+}
+
+export interface CatalogSourceRecord {
+  id: string;
+  tenantId: string;
+  type: CatalogSourceType;
+  name: string;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt?: string | null;
+}

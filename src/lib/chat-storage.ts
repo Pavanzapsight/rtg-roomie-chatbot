@@ -7,9 +7,10 @@
  *
  * In standalone mode (direct visit to /), localStorage is used normally.
  */
-import type { ChatMessage } from "@/components/ChatWidget";
+import type { PersistedChatMessage as ChatMessage } from "@/lib/chat-types";
+import { getScopedStorageKey, setStorageNamespace } from "@/lib/browser-session";
 
-const STORAGE_KEY = "rtg_chat_messages";
+const STORAGE_KEY = "chat_messages";
 
 // ── In-memory cache (source of truth inside the iframe) ──
 let messageCache: ChatMessage[] = [];
@@ -23,6 +24,10 @@ export function initFromBridge(messages: ChatMessage[] | null, isEmbed: boolean)
     messageCache = messages;
   }
   initialized = true;
+}
+
+export function configureMessageStorageNamespace(namespace: string | null | undefined) {
+  setStorageNamespace(namespace);
 }
 
 export function isInitialized(): boolean {
@@ -46,7 +51,7 @@ export function saveMessages(messages: ChatMessage[]) {
   if (embedded) {
     postToParent("rtg-save-messages", { messages: toSave });
   } else {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)); }
+    try { localStorage.setItem(getScopedStorageKey(STORAGE_KEY), JSON.stringify(toSave)); }
     catch { /* quota */ }
   }
 }
@@ -61,7 +66,7 @@ export function loadMessages(): ChatMessage[] | null {
   if (messageCache.length > 0) return messageCache;
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getScopedStorageKey(STORAGE_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -77,7 +82,7 @@ export function clearMessages() {
   if (embedded) {
     postToParent("rtg-clear-messages");
   } else {
-    try { localStorage.removeItem(STORAGE_KEY); }
+    try { localStorage.removeItem(getScopedStorageKey(STORAGE_KEY)); }
     catch { /* noop */ }
   }
 }

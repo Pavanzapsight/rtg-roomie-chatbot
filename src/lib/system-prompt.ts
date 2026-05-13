@@ -1,5 +1,6 @@
 import { SYSTEM_PROMPT_RAW } from "@/data/system-prompt-raw";
 import { SKILLS } from "@/data/skills-raw";
+import type { TenantAiConfig, TenantPromptConfig } from "@/lib/platform-types";
 
 export type ConversationStage =
   | "returning"
@@ -81,6 +82,59 @@ function loadFile(relativePath: string): string {
   const skillMatch = relativePath.match(/^skills\/(.+)\.md$/);
   if (skillMatch && SKILLS[skillMatch[1]]) return SKILLS[skillMatch[1]];
   throw new Error(`[system-prompt] Unknown file: ${relativePath}`);
+}
+
+function applyTenantPromptConfig(
+  content: string,
+  config?: TenantPromptConfig
+): string {
+  if (!config) return content;
+
+  let next = content;
+  const brandName = config.brandName?.trim() || "the store";
+  const websiteUrl = config.websiteUrl?.trim();
+  const supportUrl = config.supportUrl?.trim();
+  const storeLocatorUrl = config.storeLocatorUrl?.trim();
+  const handoffDescription = config.handoffDescription?.trim();
+
+  next = next.replaceAll("Rooms To Go", brandName);
+  if (supportUrl) {
+    next = next.replaceAll("roomstogo.com/help", supportUrl);
+    next = next.replaceAll("https://www.roomstogo.com/help", supportUrl);
+  }
+  if (storeLocatorUrl) {
+    next = next.replaceAll("https://www.roomstogo.com/stores", storeLocatorUrl);
+  }
+  if (websiteUrl) {
+    try {
+      const domain = new URL(websiteUrl).hostname;
+      next = next.replaceAll("roomstogo.com", domain);
+      next = next.replaceAll("https://www.roomstogo.com", websiteUrl.replace(/\/+$/, ""));
+    } catch {
+      /* ignore invalid website override */
+    }
+  }
+  if (handoffDescription) {
+    next = next.replaceAll("customer care", handoffDescription);
+  }
+
+  return next;
+}
+
+function buildTenantAiConfigBlock(config?: TenantAiConfig): string {
+  if (!config) return "";
+
+  const lines = [
+    config.businessSummary ? `- Business summary: ${config.businessSummary}` : null,
+    config.brandVoice ? `- Brand voice: ${config.brandVoice}` : null,
+    config.targetAudience ? `- Target audience: ${config.targetAudience}` : null,
+    config.salesPolicy ? `- Sales policy: ${config.salesPolicy}` : null,
+    config.supportPolicy ? `- Support policy: ${config.supportPolicy}` : null,
+    config.extraInstructions ? `- Extra merchant instructions: ${config.extraInstructions}` : null,
+  ].filter(Boolean) as string[];
+
+  if (lines.length === 0) return "";
+  return `\n\n---\n\n# TENANT AI CONFIG\n\nUse the merchant-specific guidance below to adapt your tone, recommendations, and boundaries for this store:\n${lines.join("\n")}`;
 }
 
 /**
@@ -403,16 +457,21 @@ export function buildSystemPrompt(
     accessoryData?: string;
     interjectionType?: string;
     customerLocation?: CustomerLocation;
+    tenantPromptConfig?: TenantPromptConfig;
+    tenantAiConfig?: TenantAiConfig;
   }
 ): string {
   // Load universal rules
-  const base = loadFile("SYSTEM_PROMPT.md").replace(
+  const base = applyTenantPromptConfig(loadFile("SYSTEM_PROMPT.md"), options?.tenantPromptConfig).replace(
     "{{CATALOG_DATA}}",
     catalogData
   );
 
   // Load stage-specific skill
-  const skill = loadFile(`skills/${stage}.md`);
+  const skill = applyTenantPromptConfig(
+    loadFile(`skills/${stage}.md`),
+    options?.tenantPromptConfig
+  );
 
   // Build human-readable context (always included when available)
   const contextNarrative = buildContextNarrative(
@@ -452,7 +511,8 @@ export function buildSystemPrompt(
     : HTML_INSTRUCTIONS;
 
   const locationBlock = buildCustomerLocationBlock(options?.customerLocation);
+  const tenantAiConfigBlock = buildTenantAiConfigBlock(options?.tenantAiConfig);
 
   // Combine: universal rules + current stage skill + context + accessory data + location + stage-appropriate output rules
-  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}${locationBlock}\n\n---\n\n${outputRules}`;
+  return `${base}\n\n---\n\n# ACTIVE SKILL\n\n${skill}${contextNarrative}${accessoryBlock}${interjectionBlock}${locationBlock}${tenantAiConfigBlock}\n\n---\n\n${outputRules}`;
 }
