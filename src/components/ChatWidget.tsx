@@ -84,6 +84,18 @@ function buildWelcomeUi(branding: WidgetBranding): UIMessage {
   };
 }
 
+function buildSystemNoticeUi(text: string): UIMessage {
+  return {
+    id: generateId(),
+    role: "assistant",
+    parts: [{ type: "text", text }],
+  };
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim() ? error.message : fallback;
+}
+
 function getTextFromUIMessage(m: UIMessage): string {
   return m.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -181,6 +193,7 @@ async function fetchTenantBootstrap(input: {
 export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string>("");
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const selectedModel = "gemini-flash-3";
   const initialTenantKey = getWindowChatConfig()?.tenantKey?.trim() || "rtg-default";
@@ -375,6 +388,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             localProfile: data.visitorProfile || null,
           });
 
+          setBootstrapError("");
           setTenantToken(bootstrap.tenantToken);
           setStorageNamespaceState(bootstrap.tenant.storageNamespace);
           const nextConfig = mergeWidgetConfigLayers(
@@ -408,6 +422,12 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           setVisitorProfile(profile);
         } catch (error) {
           console.error("[widget] bootstrap failed:", error);
+          const message = getErrorMessage(
+            error,
+            "The shopping assistant could not connect right now. Please try again shortly."
+          );
+          setBootstrapError(message);
+          setTenantToken("");
           const nextConfig = resolveWidgetConfig({
             theme: data.theme,
             branding: data.branding,
@@ -416,7 +436,11 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
           initFromBridge(data.chatMessages || null, true);
           initProfileFromBridge(data.visitorProfile || null, true);
           const saved = loadMessages();
-          setMessages(saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)]);
+          const restored = saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)];
+          setMessages([
+            ...restored,
+            buildSystemNoticeUi(message),
+          ]);
           setVisitorProfile(recordVisit({
             productName: data.pageContext?.productName,
             category: data.pageContext?.category,
@@ -697,6 +721,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         });
 
         if (cancelled) return;
+        setBootstrapError("");
         setTenantToken(bootstrap.tenantToken);
         setStorageNamespaceState(bootstrap.tenant.storageNamespace);
         const nextConfig = mergeWidgetConfigLayers(
@@ -724,12 +749,22 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
         setVisitorProfile(profile);
       } catch (error) {
         console.error("[widget] standalone bootstrap failed:", error);
+        const message = getErrorMessage(
+          error,
+          "The shopping assistant could not connect right now. Please try again shortly."
+        );
+        setBootstrapError(message);
+        setTenantToken("");
         const nextConfig = resolveWidgetConfig(windowConfig);
         setWidgetConfig(nextConfig);
         initFromBridge(null, false);
         initProfileFromBridge(null, false);
         const saved = loadMessages();
-        setMessages(saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)]);
+        const restored = saved && saved.length > 0 ? saved.map(chatMessageToUi) : [buildWelcomeUi(nextConfig.branding)];
+        setMessages([
+          ...restored,
+          buildSystemNoticeUi(message),
+        ]);
         const ctx = getPageContext();
         if (ctx) setPageContext(ctx);
         setVisitorProfile(recordVisit({
@@ -1318,7 +1353,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
   const handleSend = useCallback(
     async (text: string) => {
-      if (!text.trim() || isStreaming || humanMode) return;
+      if (!text.trim() || isStreaming || humanMode || !tenantTokenRef.current) return;
 
       // User typing = CONVERSATION mode. Reset all proactive timers/counters.
       const now = Date.now();
@@ -1434,7 +1469,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
 
             <ChatInput
               onSend={handleSend}
-              disabled={isStreaming || humanMode}
+              disabled={isStreaming || humanMode || (loaded && !tenantToken)}
               isStreaming={isStreaming}
               humanMode={humanMode}
               onAbort={stop}
