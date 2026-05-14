@@ -1132,6 +1132,8 @@ export async function ensureTenantForShopifyStorefront(input: {
            WHERE id = $1`,
           [installationResult.rows[0].id, normalizedStorefrontDomain]
         );
+
+        await upsertShopifyCatalogSource(client, tenantId, normalizedShopDomain);
       }
 
       await client.query("COMMIT");

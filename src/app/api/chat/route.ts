@@ -1,5 +1,12 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  generateId,
+  streamText,
+  type UIMessage,
+} from "ai";
 import {
   buildSystemPrompt,
   type VisitorProfile,
@@ -43,6 +50,7 @@ const MODEL_MAP: Record<string, string> = {
 };
 
 const DEFAULT_MODEL = "gemini-flash-3";
+const NO_ACTIVE_TENANT_CATALOG_MARKER = "(no active tenant catalog snapshot)";
 
 function getTextFromUiMessage(m: UIMessage): string {
   return m.parts
@@ -121,6 +129,50 @@ function toPlainMessages(messages: UIMessage[]): Array<{ role: "user" | "assista
     role: message.role as "user" | "assistant",
     text: stripStageTag(getTextFromUiMessage(message)),
   }));
+}
+
+function hasActiveTenantCatalogSnapshot(catalogData: string): boolean {
+  return !catalogData.includes(NO_ACTIVE_TENANT_CATALOG_MARKER);
+}
+
+function blockForMissingCatalog(
+  stage: ConversationStage,
+  catalogData: string
+): boolean {
+  if (hasActiveTenantCatalogSnapshot(catalogData)) {
+    return false;
+  }
+
+  return needsCatalogRetrieval(stage) || stage === "contextual" || stage === "upsell";
+}
+
+function createMissingCatalogResponse(messages: UIMessage[]): Response {
+  const textId = generateId();
+  const stream = createUIMessageStream({
+    originalMessages: messages,
+    execute: ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId: generateId(),
+      });
+      writer.write({
+        type: "text-start",
+        id: textId,
+      });
+      writer.write({
+        type: "text-delta",
+        id: textId,
+        delta:
+          "I’m still syncing this store’s catalog, so I can’t recommend specific products or show product cards yet. Please try again after the Shopify catalog sync finishes.",
+      });
+      writer.write({
+        type: "text-end",
+        id: textId,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream });
 }
 
 async function resolveCatalogForStage(input: {
@@ -365,6 +417,10 @@ export async function POST(request: Request) {
       });
       console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
       console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
+      if (blockForMissingCatalog("contextual", retrieval.catalogData)) {
+        console.warn("[chat route] blocking contextual response because tenant catalog is missing");
+        return createMissingCatalogResponse(messages);
+      }
       const systemPrompt = buildSystemPrompt(retrieval.catalogData, "contextual", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext,
@@ -489,6 +545,10 @@ IMPORTANT context to weave in:
       console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
       console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
       console.log("[chat route] accessory prompt length:", retrieval.accessoryData?.length ?? 0, "chars");
+      if (blockForMissingCatalog("upsell", retrieval.catalogData)) {
+        console.warn("[chat route] blocking upsell response because tenant catalog is missing");
+        return createMissingCatalogResponse(messages);
+      }
       const systemPrompt = buildSystemPrompt(retrieval.catalogData, "upsell", {
         visitorProfile: visitorProfile ?? undefined,
         pageContext: pageContext ?? undefined,
@@ -553,6 +613,10 @@ IMPORTANT context to weave in:
     console.log("[chat route] retrieval:", retrieval.retrievalMeta ?? "skipped");
     console.log("[chat route] catalog prompt length:", retrieval.catalogData.length, "chars");
     console.log("[chat route] accessory prompt length:", retrieval.accessoryData?.length ?? 0, "chars");
+    if (blockForMissingCatalog(currentStage, retrieval.catalogData)) {
+      console.warn("[chat route] blocking response because tenant catalog is missing for stage:", currentStage);
+      return createMissingCatalogResponse(messages);
+    }
 
     const systemPrompt = buildSystemPrompt(retrieval.catalogData, currentStage, {
       visitorProfile: visitorProfile ?? undefined,
