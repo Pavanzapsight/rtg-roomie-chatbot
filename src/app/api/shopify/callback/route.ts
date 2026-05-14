@@ -7,6 +7,7 @@ import {
   verifyShopifyCallbackHmac,
   verifyShopifyInstallState,
 } from "@/lib/shopify";
+import { syncTenantShopifyCatalog } from "@/lib/shopify-catalog-sync";
 import { upsertTenantFromShopifyInstall } from "@/lib/tenant-platform";
 
 const SHOPIFY_INSTALL_COOKIE = "rtg_shopify_install_state";
@@ -49,9 +50,20 @@ export async function GET(request: NextRequest) {
       currencyCode: shopDetails.currencyCode,
     });
 
+    let catalogSync = "ready";
+    try {
+      await syncTenantShopifyCatalog({
+        tenantId: tenant.tenantId,
+        appOrigin: request.nextUrl.origin,
+      });
+    } catch (error) {
+      console.error("[shopify callback] initial catalog sync failed:", error);
+      catalogSync = "failed";
+    }
+
     const response = NextResponse.redirect(
       new URL(
-        `/shopify/installed?shop=${encodeURIComponent(shop)}&tenantKey=${encodeURIComponent(tenant.tenantKey)}`,
+        `/shopify/installed?shop=${encodeURIComponent(shop)}&tenantKey=${encodeURIComponent(tenant.tenantKey)}&catalogSync=${encodeURIComponent(catalogSync)}`,
         request.nextUrl.origin
       )
     );

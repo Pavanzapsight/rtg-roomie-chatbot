@@ -3,14 +3,16 @@ import Link from "next/link";
 export default async function ShopifyInstalledPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ shop?: string; tenantKey?: string }>;
+  searchParams?: Promise<{ shop?: string; tenantKey?: string; catalogSync?: string }>;
 }) {
   const params = (await (searchParams ?? Promise.resolve({}))) as {
     shop?: string;
     tenantKey?: string;
+    catalogSync?: string;
   };
   const shop = params.shop || "your Shopify store";
   const tenantKey = params.tenantKey || "";
+  const catalogSync = params.catalogSync || "";
   const shopifyApiKey = process.env.SHOPIFY_API_KEY?.trim() || "";
   const enableEmbedUrl =
     shopifyApiKey && shop && shop !== "your Shopify store"
@@ -24,14 +26,32 @@ export default async function ShopifyInstalledPage({
         style={{ background: "var(--widget-surface)", borderColor: "var(--widget-border)" }}
       >
         <h1 className="text-3xl font-semibold" style={{ color: "var(--widget-text)" }}>
-          Shopify install connected
+          Shopify app installed
         </h1>
         <p className="mt-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-          {shop} is now linked to this app. The tenant was created or updated automatically, and the next step is wiring catalog sync plus the Theme App Embed storefront experience.
+          {shop} installed the Shopify app successfully. This page is for your internal setup steps after merchant install: confirm the tenant mapping, sync the store catalog, and enable the Theme App Embed.
         </p>
+        <div className="mt-4 rounded-2xl border p-4 text-sm" style={{ borderColor: "var(--widget-border)", color: "var(--widget-text-muted)" }}>
+          <p>
+            Merchant-facing install link: use Shopify&apos;s Custom Distribution install URL from the Partner Dashboard.
+          </p>
+          <p className="mt-2">
+            Internal-only links: this page, the admin dashboard, and any manual `/api/shopify/install?shop=...` route are for setup/debugging only.
+          </p>
+        </div>
+        {catalogSync === "ready" ? (
+          <p className="mt-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
+            Initial Shopify catalog sync completed automatically.
+          </p>
+        ) : null}
+        {catalogSync === "failed" ? (
+          <p className="mt-3 text-sm" style={{ color: "#b45309" }}>
+            The app installed successfully, but the initial catalog sync did not complete. Open admin to run the Shopify catalog sync manually.
+          </p>
+        ) : null}
         {enableEmbedUrl ? (
           <p className="mt-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-            Next, open the theme editor and enable the chatbot app embed for this store.
+            Next, enable the chatbot app embed for this store in the theme editor.
           </p>
         ) : null}
         <div className="mt-6 space-y-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
@@ -57,7 +77,7 @@ export default async function ShopifyInstalledPage({
                 : { background: "var(--widget-accent)", color: "var(--widget-accent-text)" }
             }
           >
-            Open admin
+            Open admin to sync catalog
           </Link>
           {tenantKey ? (
             <Link

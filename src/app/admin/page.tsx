@@ -47,7 +47,7 @@ export default async function AdminPage() {
               Multi-Tenant Admin
             </h1>
             <p className="mt-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-              Provision tenants, manage domains, connect Shopify shops, and manage active catalog snapshots.
+              Internal console for tenant setup, Shopify catalog sync, domain management, and active catalog snapshots.
             </p>
           </div>
           <form action="/api/admin/logout" method="post">
@@ -89,9 +89,22 @@ export default async function AdminPage() {
         >
           <h2 className="text-xl font-semibold">Create Tenant</h2>
           <p className="mt-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-            Manual creation stays available for internal setup. Shopify installs can now auto-create tenants through the OAuth routes.
+            Manual creation stays available for internal setup. Merchants should install through Shopify&apos;s Custom Distribution link; this admin screen is only for your team.
           </p>
           <AdminTenantCreateForm />
+        </section>
+
+        <section
+          className="rounded-3xl border p-6"
+          style={{ background: "var(--widget-surface)", borderColor: "var(--widget-border)" }}
+        >
+          <h2 className="text-xl font-semibold">Shopify flow</h2>
+          <div className="mt-2 space-y-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
+            <p>1. Merchant installs with the Shopify Custom Distribution URL from the Partner Dashboard.</p>
+            <p>2. After install, your team opens this admin page to confirm the tenant and run the first Shopify catalog sync.</p>
+            <p>3. Then enable the Theme App Embed in the merchant&apos;s theme editor.</p>
+            <p>Do not send merchants the internal `/api/shopify/install?shop=...` route.</p>
+          </div>
         </section>
 
         {!databaseError && tenantDetails.length === 0 ? (
@@ -182,7 +195,7 @@ export default async function AdminPage() {
                     </div>
                   ) : (
                     <p className="mt-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-                      This tenant is not linked to a Shopify installation yet.
+                      This tenant is not linked to a Shopify install yet. Merchant installs come from Shopify&apos;s Custom Distribution URL, then this admin view is used for catalog sync.
                     </p>
                   )}
                 </div>

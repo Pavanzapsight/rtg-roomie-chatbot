@@ -1,10 +1,9 @@
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { buildCatalogDatasetFromPostgres } from "@/lib/catalog-ingestion";
-import { buildCatalogDatasetFromShopify, getShopifyAppConfig } from "@/lib/shopify";
+import { syncTenantShopifyCatalog } from "@/lib/shopify-catalog-sync";
 import {
   createCatalogVersion,
   getCatalogSource,
-  getTenantShopifyInstallation,
   updateCatalogSourceSyncStamp,
 } from "@/lib/tenant-platform";
 
@@ -36,19 +35,16 @@ export async function POST(
             queryText: String(source.config.queryText || ""),
           })
         : source.type === "shopify"
-          ? await (async () => {
-              const installation = await getTenantShopifyInstallation(tenantId);
-              if (!installation || installation.status !== "installed") {
-                throw new Error("Shopify installation not found for this tenant.");
-              }
-              return buildCatalogDatasetFromShopify({
-                shop: installation.shopDomain,
-                storefrontDomain: installation.storefrontDomain,
-                accessToken: installation.accessToken,
-                config: getShopifyAppConfig(new URL(request.url).origin),
-              });
-            })()
+          ? null
           : null;
+
+    if (source.type === "shopify") {
+      await syncTenantShopifyCatalog({
+        tenantId,
+        appOrigin: new URL(request.url).origin,
+      });
+      return Response.redirect(new URL("/admin", request.url), 303);
+    }
 
     if (!dataset) {
       return Response.json({ error: `Sync is not supported for ${source.type} sources yet.` }, { status: 400 });
