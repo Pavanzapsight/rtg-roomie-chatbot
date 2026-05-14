@@ -227,7 +227,7 @@ function buildIframeBaseStyles(theme: WidgetTheme): string {
   }
 
   .card {
-    border: 2px solid #ff0000;
+    border: 2px solid ${border};
     border-radius: ${radius};
     display: flex;
     flex-direction: column;

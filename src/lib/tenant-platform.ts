@@ -362,13 +362,25 @@ async function loadTenantDomains(client: PoolClient, tenantId: string): Promise<
 
 function hostAllowed(hostname: string, allowedDomains: string[]): boolean {
   if (!hostname) return false;
+  const normalizedHostname = hostname.toLowerCase();
+  const hostnameWithoutWww = normalizedHostname.replace(/^www\./, "");
+
   return allowedDomains.some((domain) => {
     const normalized = domain.toLowerCase();
+    const normalizedWithoutWww = normalized.replace(/^www\./, "");
+
     if (normalized.startsWith("*.")) {
       const suffix = normalized.slice(2);
-      return hostname === suffix || hostname.endsWith(`.${suffix}`);
+      const hostnameSuffix = normalizedHostname === suffix || normalizedHostname.endsWith(`.${suffix}`);
+      const hostnameWithoutWwwSuffix =
+        hostnameWithoutWww === suffix || hostnameWithoutWww.endsWith(`.${suffix}`);
+      return hostnameSuffix || hostnameWithoutWwwSuffix;
     }
-    return hostname === normalized;
+
+    return (
+      normalizedHostname === normalized ||
+      hostnameWithoutWww === normalizedWithoutWww
+    );
   });
 }
 
@@ -1034,6 +1046,102 @@ export async function upsertTenantFromShopifyInstall(input: {
     throw new Error("Tenant was not found after Shopify install.");
   }
   return tenant;
+}
+
+export async function ensureTenantForShopifyStorefront(input: {
+  shopDomain: string;
+  storefrontDomain?: string | null;
+}): Promise<TenantRecord | null> {
+  if (!hasDatabase()) return null;
+
+  await ensurePlatformSchema();
+  const normalizedShopDomain = input.shopDomain.trim().toLowerCase();
+  const normalizedStorefrontDomain = input.storefrontDomain?.trim().toLowerCase() || null;
+  if (!normalizedShopDomain) return null;
+
+  let tenantId = "";
+
+  await withDb(async (client) => {
+    await client.query("BEGIN");
+    try {
+      const installationResult = await client.query<ShopifyInstallationRow>(
+        `SELECT * FROM shopify_installations WHERE shop_domain = $1 LIMIT 1`,
+        [normalizedShopDomain]
+      );
+
+      tenantId = installationResult.rows[0]?.tenant_id || "";
+
+      if (!tenantId) {
+        const domainMatch = await client.query<{ tenant_id: string }>(
+          `SELECT tenant_id FROM tenant_domains WHERE hostname = ANY($1::text[]) LIMIT 1`,
+          [[normalizedShopDomain, normalizedStorefrontDomain].filter(Boolean)]
+        );
+        tenantId = domainMatch.rows[0]?.tenant_id || "";
+      }
+
+      if (!tenantId) {
+        tenantId = randomUUID();
+        const tenantKey = await ensureUniqueTenantKey(
+          client,
+          deriveTenantKey(normalizedStorefrontDomain || normalizedShopDomain)
+        );
+        const tenantName = (normalizedStorefrontDomain || normalizedShopDomain)
+          .replace(/^www\./, "")
+          .replace(/\.myshopify\.com$/, "")
+          .replace(/ /g, "")
+          .trim() || "Shopify Store";
+        const appUrl = normalizedStorefrontDomain
+          ? `https://${normalizedStorefrontDomain}`
+          : `https://${normalizedShopDomain}`;
+        const prompt: TenantPromptConfig = {
+          brandName: tenantName,
+          websiteUrl: appUrl,
+        };
+
+        await client.query(
+          `INSERT INTO tenants (
+            id, tenant_key, name, storage_namespace, app_name, app_url, theme_json, branding_json, prompt_json, ai_config_json
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb)`,
+          [
+            tenantId,
+            tenantKey,
+            tenantName,
+            buildStorageNamespace(tenantKey),
+            `${tenantName} Assistant`,
+            appUrl,
+            JSON.stringify({}),
+            JSON.stringify({}),
+            JSON.stringify(prompt),
+            JSON.stringify(defaultTenantAiConfig(tenantName)),
+          ]
+        );
+      }
+
+      for (const hostname of [normalizedShopDomain, normalizedStorefrontDomain].filter(Boolean) as string[]) {
+        await client.query(
+          `INSERT INTO tenant_domains (id, tenant_id, hostname) VALUES ($1,$2,$3)
+           ON CONFLICT (tenant_id, hostname) DO NOTHING`,
+          [randomUUID(), tenantId, hostname]
+        );
+      }
+
+      if (installationResult.rows[0]?.id) {
+        await client.query(
+          `UPDATE shopify_installations
+           SET storefront_domain = COALESCE($2, storefront_domain), updated_at = NOW()
+           WHERE id = $1`,
+          [installationResult.rows[0].id, normalizedStorefrontDomain]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  });
+
+  return tenantId ? resolveTenantById(tenantId) : null;
 }
 
 export async function markShopifyInstallationUninstalled(shopDomain: string): Promise<void> {

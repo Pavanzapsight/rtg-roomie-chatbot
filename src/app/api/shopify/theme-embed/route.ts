@@ -1,7 +1,19 @@
 import { NextRequest } from "next/server";
+import { ensureTenantForShopifyStorefront } from "@/lib/tenant-platform";
 
 function clean(value: string | null | undefined): string {
   return String(value || "").trim();
+}
+
+function hostnameFromUrl(value: string | null | undefined): string {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return "";
+
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -13,6 +25,17 @@ export async function GET(request: NextRequest) {
       },
       status: 400,
     });
+  }
+
+  const storefrontDomain = hostnameFromUrl(request.headers.get("referer"));
+
+  try {
+    await ensureTenantForShopifyStorefront({
+      shopDomain: shop,
+      storefrontDomain,
+    });
+  } catch (error) {
+    console.error("[shopify-theme-embed] Failed to ensure tenant mapping", error);
   }
 
   const origin = request.nextUrl.origin;

@@ -164,7 +164,15 @@ async function fetchTenantBootstrap(input: {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || "Failed to bootstrap tenant session.");
+    const parsed = (() => {
+      try {
+        return JSON.parse(text) as { error?: string };
+      } catch {
+        return null;
+      }
+    })();
+    const message = parsed?.error?.trim() || text || "Failed to bootstrap tenant session.";
+    throw new Error(message);
   }
 
   return (await response.json()) as TenantBootstrap;
@@ -1394,7 +1402,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
             aria-label={`Close ${widgetConfig.branding.launcherLabel}`}
             onClick={() => setIsOpen(false)}
             className={`fixed inset-0 z-40 ${embed ? "pointer-events-auto" : ""}`}
-            style={{ backgroundColor: "var(--widget-overlay)" }}
+            style={{ backgroundColor: "transparent" }}
           />
 
           <div

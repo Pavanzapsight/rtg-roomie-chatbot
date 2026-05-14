@@ -30,9 +30,13 @@ export async function POST(request: Request) {
 
     return Response.json(bootstrap);
   } catch (error) {
+    const message = error instanceof Error && error.message.trim()
+      ? error.message
+      : "Widget bootstrap failed. Check DATABASE_URL, tenant domain mapping, and tenant token configuration.";
+
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "Bootstrap failed.",
+        error: message,
       },
       { status: 500 }
     );
