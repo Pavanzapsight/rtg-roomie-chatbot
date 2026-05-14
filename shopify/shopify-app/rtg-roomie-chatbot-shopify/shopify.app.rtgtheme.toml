@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "afda8b3cc3daa9885a21b8544cb4da50"
+client_id = "36e8c79594a9d3507daa3b898610d503"
 name = "rtgtheme"
 application_url = "https://rtg-roomie-chatbot.vercel.app"
 embedded = true
