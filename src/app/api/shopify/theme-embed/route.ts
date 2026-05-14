@@ -28,12 +28,14 @@ export async function GET(request: NextRequest) {
   }
 
   const storefrontDomain = hostnameFromUrl(request.headers.get("referer"));
+  let tenantKey = "";
 
   try {
-    await ensureTenantForShopifyStorefront({
+    const tenant = await ensureTenantForShopifyStorefront({
       shopDomain: shop,
       storefrontDomain,
     });
+    tenantKey = tenant?.tenantKey || "";
   } catch (error) {
     console.error("[shopify-theme-embed] Failed to ensure tenant mapping", error);
   }
@@ -43,6 +45,7 @@ export async function GET(request: NextRequest) {
   scriptUrl.searchParams.set("shop", shop);
 
   const config = {
+    tenantKey: tenantKey || undefined,
     shopDomain: shop,
     theme: {
       accent: clean(request.nextUrl.searchParams.get("accent")) || undefined,

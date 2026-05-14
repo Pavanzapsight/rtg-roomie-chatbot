@@ -999,6 +999,10 @@
         widgetConfig = mergeConfig(publicConfig, widgetConfig);
       }
       tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
+      if (!widgetConfig.tenantKey && shopDomain) {
+        console.error("RTG widget: no tenant mapping found for shop domain", shopDomain);
+        return;
+      }
       storageNamespace = tenantKey;
       inject();
     });
