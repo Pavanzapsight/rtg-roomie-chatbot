@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
     }
 
     const verifiedState = verifyShopifyInstallState(state, config.apiSecret);
-    if (!verifiedState || verifiedState.shop !== shop || cookieState !== state) {
+    const cookieMatches = !cookieState || cookieState === state;
+    if (!verifiedState || verifiedState.shop !== shop || !cookieMatches) {
       return Response.json({ error: "Shopify install state validation failed." }, { status: 401 });
     }
 

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     );
     response.cookies.set(SHOPIFY_INSTALL_COOKIE, state, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: request.nextUrl.protocol === "https:" ? "none" : "lax",
       secure: request.nextUrl.protocol === "https:",
       path: "/",
       maxAge: 60 * 10,
