@@ -17,7 +17,6 @@ export async function GET(request: NextRequest) {
     const shop = normalizeShopifyShopDomain(request.nextUrl.searchParams.get("shop"));
     const code = String(request.nextUrl.searchParams.get("code") || "").trim();
     const state = String(request.nextUrl.searchParams.get("state") || "").trim();
-    const cookieState = request.cookies.get(SHOPIFY_INSTALL_COOKIE)?.value;
 
     if (!shop || !code || !state) {
       return Response.json({ error: "Shopify callback is missing required parameters." }, { status: 400 });
@@ -28,8 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     const verifiedState = verifyShopifyInstallState(state, config.apiSecret);
-    const cookieMatches = !cookieState || cookieState === state;
-    if (!verifiedState || verifiedState.shop !== shop || !cookieMatches) {
+    if (!verifiedState || verifiedState.shop !== shop) {
       return Response.json({ error: "Shopify install state validation failed." }, { status: 401 });
     }
 
