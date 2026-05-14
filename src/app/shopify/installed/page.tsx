@@ -1,12 +1,16 @@
-"use client";
-
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
-export default function ShopifyInstalledPage() {
-  const searchParams = useSearchParams();
-  const shop = searchParams.get("shop") || "your Shopify store";
-  const tenantKey = searchParams.get("tenantKey") || "";
+export default async function ShopifyInstalledPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ shop?: string; tenantKey?: string }>;
+}) {
+  const params = (await (searchParams ?? Promise.resolve({}))) as {
+    shop?: string;
+    tenantKey?: string;
+  };
+  const shop = params.shop || "your Shopify store";
+  const tenantKey = params.tenantKey || "";
 
   return (
     <main className="min-h-screen px-6 py-10" style={{ background: "var(--widget-surface-alt)" }}>
