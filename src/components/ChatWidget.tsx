@@ -150,6 +150,17 @@ function getPageContext(): PageContext | null {
   };
 }
 
+function getRuntimeTenantKey(): string {
+  if (typeof window === "undefined") return "";
+  const configTenantKey = getWindowChatConfig()?.tenantKey?.trim();
+  if (configTenantKey) return configTenantKey;
+  try {
+    return new URLSearchParams(window.location.search).get("tenantKey")?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
 function getHostOrigin(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -196,7 +207,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [bootstrapError, setBootstrapError] = useState<string>("");
   const [visitorProfile, setVisitorProfile] = useState<VisitorProfile | null>(null);
   const selectedModel = "gemini-flash-3";
-  const initialTenantKey = getWindowChatConfig()?.tenantKey?.trim() || "rtg-default";
+  const initialTenantKey = getRuntimeTenantKey();
   const [widgetConfig, setWidgetConfig] = useState(() =>
     resolveWidgetConfig(getWindowChatConfig())
   );
@@ -204,7 +215,7 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
   const [tenantToken, setTenantToken] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
   const [storageNamespace, setStorageNamespaceState] = useState<string>(
-    initialTenantKey || "rtg-default"
+    initialTenantKey || "rtg-unresolved"
   );
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [browsingHistory, setBrowsingHistory] = useState<BrowsingHistoryEntry[]>([]);
@@ -362,10 +373,9 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
       if (e.data?.type === "rtg-init") {
         const data = e.data;
         const incomingTenantKey =
-          String(data.tenantKey || getWindowChatConfig()?.tenantKey || "rtg-default").trim() ||
-          "rtg-default";
+          String(data.tenantKey || getRuntimeTenantKey()).trim();
         const incomingNamespace =
-          String(data.storageNamespace || incomingTenantKey).trim() || incomingTenantKey;
+          String(data.storageNamespace || incomingTenantKey || "rtg-unresolved").trim() || "rtg-unresolved";
         setStorageNamespace(incomingNamespace);
         configureMessageStorageNamespace(incomingNamespace);
         configureProfileStorageNamespace(incomingNamespace);
@@ -691,7 +701,18 @@ export function ChatWidget({ embed = false }: { embed?: boolean } = {}) {
     let cancelled = false;
     async function initStandalone() {
       const windowConfig = getWindowChatConfig();
-      const standaloneTenantKey = windowConfig?.tenantKey?.trim() || "rtg-default";
+      const standaloneTenantKey = getRuntimeTenantKey();
+      if (!standaloneTenantKey) {
+        const message = "Missing tenant key. Open this embed with a valid tenantKey, or load it through the storefront embed script.";
+        setBootstrapError(message);
+        setTenantToken("");
+        setWidgetConfig(resolveWidgetConfig(windowConfig));
+        initFromBridge(null, false);
+        initProfileFromBridge(null, false);
+        setMessages([buildSystemNoticeUi(message)]);
+        setLoaded(true);
+        return;
+      }
       setStorageNamespace(standaloneTenantKey);
       configureMessageStorageNamespace(standaloneTenantKey);
       configureProfileStorageNamespace(standaloneTenantKey);

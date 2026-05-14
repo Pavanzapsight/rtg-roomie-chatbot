@@ -564,7 +564,7 @@ export async function saveSessionState(input: {
         await client.query(
           `INSERT INTO conversation_messages (id, conversation_id, sort_order, role, text)
            VALUES ($1, $2, $3, $4, $5)`,
-          [message.id || randomUUID(), conversationId, index, message.role, message.text]
+          [randomUUID(), conversationId, index, message.role, message.text]
         );
       }
 

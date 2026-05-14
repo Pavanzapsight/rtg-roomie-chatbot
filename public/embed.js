@@ -195,8 +195,8 @@
     (window.Shopify && (window.Shopify.shop || window.Shopify.shopDomain)) ||
     window.location.hostname
   );
-  var tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
-  var storageNamespace = tenantKey;
+  var tenantKey = (widgetConfig.tenantKey || "").trim();
+  var storageNamespace = tenantKey || "rtg-unresolved";
 
   function scopedStorageKey(base) {
     return storageNamespace + ":" + base;
@@ -988,7 +988,11 @@
 
   function start() {
     if (widgetConfig.tenantKey || !shopDomain || !origin) {
-      tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
+      tenantKey = (widgetConfig.tenantKey || "").trim();
+      if (!tenantKey) {
+        console.error("RTG widget: missing tenantKey and no shop domain mapping was available.");
+        return;
+      }
       storageNamespace = tenantKey;
       inject();
       return;
@@ -998,9 +1002,13 @@
       if (publicConfig && typeof publicConfig === "object") {
         widgetConfig = mergeConfig(publicConfig, widgetConfig);
       }
-      tenantKey = (widgetConfig.tenantKey || "").trim() || "rtg-default";
-      if (!widgetConfig.tenantKey && shopDomain) {
+      tenantKey = (widgetConfig.tenantKey || "").trim();
+      if (!tenantKey && shopDomain) {
         console.error("RTG widget: no tenant mapping found for shop domain", shopDomain);
+        return;
+      }
+      if (!tenantKey) {
+        console.error("RTG widget: missing tenantKey and no shop domain mapping was available.");
         return;
       }
       storageNamespace = tenantKey;
