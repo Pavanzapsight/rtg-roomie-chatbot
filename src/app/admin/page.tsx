@@ -8,6 +8,14 @@ import {
   listTenants,
 } from "@/lib/tenant-platform";
 
+function getShopifyConnectDomain(domains: string[]): string {
+  return domains.find((domain) => domain.endsWith(".myshopify.com")) || "";
+}
+
+function isSeededDemoTenant(tenantKey: string): boolean {
+  return tenantKey === "rtg-default";
+}
+
 export default async function AdminPage() {
   if (!(await isAdminAuthenticated())) {
     redirect("/admin/login");
@@ -37,6 +45,11 @@ export default async function AdminPage() {
         ? error.message
         : "Could not connect to the configured Postgres database.";
   }
+
+  const visibleTenantDetails = tenantDetails.filter(
+    ({ tenant }) => !isSeededDemoTenant(tenant.tenantKey)
+  );
+  const hiddenDemoTenantCount = tenantDetails.length - visibleTenantDetails.length;
 
   return (
     <main className="min-h-screen px-6 py-10" style={{ background: "var(--widget-surface-alt)" }}>
@@ -107,19 +120,35 @@ export default async function AdminPage() {
           </div>
         </section>
 
-        {!databaseError && tenantDetails.length === 0 ? (
+        {hiddenDemoTenantCount > 0 ? (
+          <section
+            className="rounded-3xl border p-6"
+            style={{ background: "var(--widget-surface)", borderColor: "var(--widget-border)" }}
+          >
+            <h2 className="text-xl font-semibold">Internal demo tenant</h2>
+            <p className="mt-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
+              The seeded `rtg-default` demo tenant is hidden from the merchant tenant list so it does not get confused with real Shopify stores.
+            </p>
+          </section>
+        ) : null}
+
+        {!databaseError && visibleTenantDetails.length === 0 ? (
           <section
             className="rounded-3xl border p-6"
             style={{ background: "var(--widget-surface)", borderColor: "var(--widget-border)" }}
           >
             <h2 className="text-xl font-semibold">Tenants</h2>
             <p className="mt-2 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-              No tenants are showing yet. If Postgres is connected correctly, this screen should normally show at least the seeded default tenant. Try refreshing after the database comes up or after you create your first tenant.
+              No merchant tenants are showing yet. Try refreshing after the database comes up or after your first Shopify store is connected.
             </p>
           </section>
         ) : null}
 
-        {tenantDetails.map(({ tenant, sources, versions, debug }) => (
+        {visibleTenantDetails.map(({ tenant, sources, versions, debug }) => (
+          (() => {
+            const shopifyConnectDomain = getShopifyConnectDomain(tenant.allowedDomains);
+            const shopifySource = sources.find((source) => source.type === "shopify");
+            return (
           <section
             key={tenant.tenantId}
             className="rounded-3xl border p-6"
@@ -194,9 +223,23 @@ export default async function AdminPage() {
                       ) : null}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
-                      This tenant is not linked to a Shopify install yet. Merchant installs come from Shopify&apos;s Custom Distribution URL, then this admin view is used for catalog sync.
-                    </p>
+                    <div className="mt-3 space-y-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
+                      <p>
+                        This tenant is not linked to a Shopify OAuth/access record yet. Merchant install alone does not give this backend the access token needed for catalog sync.
+                      </p>
+                      {shopifyConnectDomain ? (
+                        <a
+                          href={`/api/shopify/install?shop=${encodeURIComponent(shopifyConnectDomain)}`}
+                          className="inline-flex rounded-2xl border px-3 py-2 text-sm font-medium"
+                          style={{ borderColor: "var(--widget-border)", color: "var(--widget-text)" }}
+                        >
+                          Connect Shopify access
+                        </a>
+                      ) : null}
+                      <p>
+                        After that access step completes, the app will auto-sync the first Shopify catalog snapshot.
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -241,9 +284,28 @@ export default async function AdminPage() {
                 <h3 className="font-semibold">Catalog sources</h3>
                 <div className="mt-3 space-y-3">
                   {sources.length === 0 ? (
-                    <p className="text-sm" style={{ color: "var(--widget-text-muted)" }}>
-                      No sources yet.
-                    </p>
+                    <div className="space-y-3 text-sm" style={{ color: "var(--widget-text-muted)" }}>
+                      <p>No sources yet.</p>
+                      {!tenant.shopifyInstallation && shopifyConnectDomain ? (
+                        <>
+                          <p>
+                            That is why the lower sync button is missing: the sync button only appears after Shopify access has been connected and a Shopify catalog source exists.
+                          </p>
+                          <a
+                            href={`/api/shopify/install?shop=${encodeURIComponent(shopifyConnectDomain)}`}
+                            className="inline-flex rounded-2xl border px-3 py-2 text-sm font-medium"
+                            style={{ borderColor: "var(--widget-border)", color: "var(--widget-text)" }}
+                          >
+                            Connect Shopify access
+                          </a>
+                        </>
+                      ) : null}
+                      {tenant.shopifyInstallation && !shopifySource ? (
+                        <p>
+                          Shopify access is connected, but no Shopify catalog source is available yet. Refresh after the callback completes, or reconnect Shopify access if this persists.
+                        </p>
+                      ) : null}
+                    </div>
                   ) : (
                     sources.map((source) => (
                       <div key={source.id} className="rounded-2xl border p-3" style={{ borderColor: "var(--widget-border)" }}>
@@ -324,6 +386,8 @@ export default async function AdminPage() {
               </div>
             </div>
           </section>
+            );
+          })()
         ))}
       </div>
     </main>
